@@ -24,12 +24,18 @@ for (i in 1:length(continuous_var)) {
        main = paste("Histogram of", continuous_var[i]))
 }
 
-## Correlations between variables 
+## Box plots  
 ggplot(data = kaggle_df, mapping = aes(x = PurchaseStatus, y = TimeSpentOnWebsite)) +
   geom_boxplot()
 
 ggplot(data = kaggle_df, mapping = aes(x = PurchaseStatus, y = AnnualIncome)) +
   geom_boxplot()
+
+ggplot(data = kaggle_df, mapping = aes(x = PurchaseStatus, y = Age)) +
+  geom_boxplot()
+
+## Frequency tables
+prop.table(table(kaggle_df$LoyaltyProgram, kaggle_df$PurchaseStatus))
 
 ## NEXT STEP: create a new column that introduces censoring (1 if customer bought something,
 ## and 0 if the customer didn't buy something and if time spent is longer than cut off period)
