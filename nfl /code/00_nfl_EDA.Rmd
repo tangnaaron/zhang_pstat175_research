@@ -1,0 +1,23 @@
+---
+title: "NFL Data Exploration"
+date: "2026-02-01"
+format: 
+  pdf
+html-math-method: mathjax
+execute:
+  eval: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(ggplot2)
+library(here)
+library(corrplot)
+library(gridExtra)
+```
+
+
+
+
