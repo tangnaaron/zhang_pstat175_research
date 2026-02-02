@@ -1,0 +1,42 @@
+---
+title: "NFL Data Exploration"
+date: "2026-02-01"
+format: 
+  pdf
+html-math-method: mathjax
+execute:
+  eval: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(ggplot2)
+library(here)
+
+```
+
+### Background
+
+Focus: Prediction of Retirement (Pick a Position? QB?)
+
+Source: [NFL Statistics](https://www.kaggle.com/datasets/kendallgillies/nflstatistics/data)
+
+### Import Data
+
+```{r}
+raw_player <- read_csv(here("nfl", "data", "Basic_Stats.csv"))
+raw_qb_logs <- read_csv(here("nfl", "data", "Game_Logs_Quarterback.csv"))
+raw_passes <- read_csv(here("nfl", "data", "Career_Stats_Passing.csv"))
+raw_rushing <- read_csv(here("nfl", "data", "Career_Stats_Rushing.csv"))
+raw_fumbles <- read_csv(here("nfl", "data", "Career_Stats_Fumbles.csv"))
+
+
+colnames(raw_player)
+colnames(raw_qb_logs)
+colnames(raw_passes)
+colnames(raw_rushing)
+colnames(raw_fumbles)
+
+```
