@@ -1,6 +1,5 @@
 ---
 title: "Kaggle Shopping Data Exploration"
-author: "Emma Nguyen"
 date: "2026-02-01"
 format: 
   pdf
@@ -8,59 +7,135 @@ html-math-method: mathjax
 execute:
   eval: TRUE
 ---
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
 library(ggplot2)
 library(here)
+library(corrplot)
+library(gridExtra)
 ```
 
-## Import Data 
-text
+## Background About Data:
 
-```{r }
-# Use here() to make it dynamic
-raw_data <- read_csv(here("shopping", "data", "raw_data","kaggle_shopping.csv"))
-raw_data
-```
+data from where, collected how? , year? , purpose?
+
+## Import Data
+
 ```{r}
-raw_data <- raw_data %>%
+# Use here() to make it dynamic
+raw_shopping <- read_csv(here("shopping", "data", "raw_data","kaggle_shopping.csv"))
+raw_shopping
+```
+
+### Change Categorical Variables to Factors
+
+```{r}
+shopping <- raw_shopping |>
   mutate(across(c(Gender, ProductCategory, LoyaltyProgram, PurchaseStatus), as.factor))
 
-summary(raw_data)
+summary(shopping)
 ```
+
+Notes:
+
+-   Age Range: \[18, 70\]
+
+-   Gender: almost 50/50; average 750 customers (no gender bias)
+
+-   Income: \[\$20,002 , \$149,785\]; average \$84,249 (slightly right skewed, higher earners high impact)
+
+-   NumPurchases: \[0, 20\]
+
+-   ProductCategory: average 300 (pretty balanced)
+
+-   TimeSpent: \[1, 60); average is 30 minutes (decent engagement)
+
+-   Loyalty: \~33% enrolled
+
+-   Discounts: \[1,5\]; average 3 (slightly left skewed, customers will little/no usage pull down average)
+
+-   PurchaseStatus: \~43% purchase
+
+### Histograms of the Continuous Variables
 
 ```{r}
 ## Histogram of continuous variables 
 continuous_var <- c("Age", "AnnualIncome", "NumberOfPurchases", "TimeSpentOnWebsite", "DiscountsAvailed")
 
+# set up a 2 x 3 grid to display all histograms together 
+par(mfrow = c(2, 3))
+
 for (i in 1:length(continuous_var)) {
-  hist(raw_data[[continuous_var[i]]], xlab = continuous_var[i], 
-       main = paste("Histogram of", continuous_var[i]))
+  current = shopping[[continuous_var[i]]] # get rows of that variable
+  hist(current,
+       xlab = continuous_var[i], 
+       main = paste("Histogram of", continuous_var[i]),
+       col = "lightblue",
+       freq = FALSE)
+  lines(density(current, adjust = 2), col = "black", lwd = 2) # visualize shape of distribution
+  # note: adjust > 1 will smooth out the line (adjust < 1 will hug the data more)
 }
+
+# reset back to default 
+par(mfrow = c(1, 1))
+
 ```
 
+Takeaway: The shopping data has a very even distribution for all variables. Since our data is very balanced, this can prevent bias and over-fitting of a particular dominant class.
+
+### Boxplots - Distribution of Variables based on Purchase Status
 
 ```{r}
-## Box plots  
-ggplot(data = raw_data, mapping = aes(x = PurchaseStatus, y = TimeSpentOnWebsite)) +
+
+## Box plots 
+time <- ggplot(data = shopping, mapping = aes(x = PurchaseStatus, y = TimeSpentOnWebsite)) +
   geom_boxplot()
 
-ggplot(data = raw_data, mapping = aes(x = PurchaseStatus, y = AnnualIncome)) +
+income <- ggplot(data = shopping, mapping = aes(x = PurchaseStatus, y = AnnualIncome)) +
   geom_boxplot()
 
-ggplot(data = raw_data, mapping = aes(x = PurchaseStatus, y = Age)) +
+age <- ggplot(data = shopping, mapping = aes(x = PurchaseStatus, y = Age)) +
   geom_boxplot()
+
+discount <- ggplot(data = shopping, mapping = aes(x = PurchaseStatus, y = DiscountsAvailed)) +
+  geom_boxplot()
+
+# showcase all boxplots using gridExtra library
+grid.arrange(time, income, age, discount, ncol = 2)
+
 ```
+
 ```{r}
 ## Frequency tables
-prop.table(table(raw_data$LoyaltyProgram, raw_data$PurchaseStatus))
+prop.table(table(shopping$LoyaltyProgram, shopping$PurchaseStatus))
 ```
 
+### Gender on Purchase Status
+
+```{r}
+gender_x_purchase <- shopping |>
+  group_by(Gender) |>
+  summarise(
+    TotalPurchases = sum(NumberOfPurchases),
+    AveragePurchases = mean(NumberOfPurchases),
+    Purchase_Prob = sum(as.integer(PurchaseStatus))/n())
+gender_x_purchase 
+
+```
+
+### Checking Purchase Status with Number Of Purchases?
+
+Question: If PurchaseStatus is 0, why is there a nonempty NumberOfPurchases category for those rows?
+
+-   NumberOfPurchases is historical, which PurchaseStatus is the most current.
+
+```{r}
+```
 
 ```{r}
 ## NEXT STEP: create a new column that introduces censoring (1 if customer bought something,
 ## and 0 if the customer didn't buy something and if time spent is longer than cut off period)
 ```
-
