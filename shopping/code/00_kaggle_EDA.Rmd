@@ -24,4 +24,43 @@ text
 raw_data <- read_csv(here("shopping", "data", "raw_data","kaggle_shopping.csv"))
 raw_data
 ```
+```{r}
+raw_data <- raw_data %>%
+  mutate(across(c(Gender, ProductCategory, LoyaltyProgram, PurchaseStatus), as.factor))
+
+summary(raw_data)
+```
+
+```{r}
+## Histogram of continuous variables 
+continuous_var <- c("Age", "AnnualIncome", "NumberOfPurchases", "TimeSpentOnWebsite", "DiscountsAvailed")
+
+for (i in 1:length(continuous_var)) {
+  hist(raw_data[[continuous_var[i]]], xlab = continuous_var[i], 
+       main = paste("Histogram of", continuous_var[i]))
+}
+```
+
+
+```{r}
+## Box plots  
+ggplot(data = raw_data, mapping = aes(x = PurchaseStatus, y = TimeSpentOnWebsite)) +
+  geom_boxplot()
+
+ggplot(data = raw_data, mapping = aes(x = PurchaseStatus, y = AnnualIncome)) +
+  geom_boxplot()
+
+ggplot(data = raw_data, mapping = aes(x = PurchaseStatus, y = Age)) +
+  geom_boxplot()
+```
+```{r}
+## Frequency tables
+prop.table(table(raw_data$LoyaltyProgram, raw_data$PurchaseStatus))
+```
+
+
+```{r}
+## NEXT STEP: create a new column that introduces censoring (1 if customer bought something,
+## and 0 if the customer didn't buy something and if time spent is longer than cut off period)
+```
 
