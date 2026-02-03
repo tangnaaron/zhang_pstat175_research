@@ -181,6 +181,7 @@ ggplot(data = summary, mapping = aes(x = AgeGroup, y = mean_time,
                                      fill = PurchaseStatus)) +
   geom_bar(stat = 'identity', position = 'dodge')
 ```
+
 ### Age on PurchaseStatus 
 ```{r}
 ggplot(data = summary, mapping = aes(x = AgeGroup, y = n,
