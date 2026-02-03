@@ -16,9 +16,12 @@ library(ggplot2)
 library(here)
 library(corrplot)
 library(gridExtra)
+library(ggridges)
 ```
 
 ## Background About Data:
+
+LINK: https://www.kaggle.com/datasets/rabieelkharoua/predict-customer-purchase-behavior-dataset
 
 data from where, collected how? , year? , purpose?
 
@@ -145,12 +148,18 @@ time_spent <- shopping |>
   group_by(TimeSpentOnWebsite) |>
   summarise()
 
-
 ```
 
-### Next\>
+# Scatter plot between time spent and number of purchases
+summary <- shopping %>%
+  group_by(PurchaseStatus, NumberOfPurchases) %>%
+  summarize(mean_time = mean(TimeSpentOnWebsite))
 
-```{r}
-## NEXT STEP: create a new column that introduces censoring (1 if customer bought something,
-## and 0 if the customer didn't buy something and if time spent is longer than cut off period)
+ggplot(data = summary, mapping = aes(x = NumberOfPurchases, y = mean_time,
+                                      fill = PurchaseStatus)) +
+  geom_density(stat = 'identity', alpha = 0.5)
 ```
+
+Notes:
+- It appears that the longer the mean time spent on a website, the greater the likelihood someone is to purchase something 
+
