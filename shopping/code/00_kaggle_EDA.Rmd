@@ -35,6 +35,7 @@ raw_shopping
 ```{r}
 shopping <- raw_shopping |>
   mutate(across(c(Gender, ProductCategory, LoyaltyProgram, PurchaseStatus), as.factor))
+shopping
 
 summary(shopping)
 ```
@@ -117,23 +118,37 @@ prop.table(table(shopping$LoyaltyProgram, shopping$PurchaseStatus))
 
 ```{r}
 gender_x_purchase <- shopping |>
+  select(Gender, NumberOfPurchases, PurchaseStatus, TimeSpentOnWebsite) |>
   group_by(Gender) |>
   summarise(
-    TotalPurchases = sum(NumberOfPurchases),
-    AveragePurchases = mean(NumberOfPurchases),
-    Purchase_Prob = sum(as.integer(PurchaseStatus))/n())
-gender_x_purchase 
+    Historical =sum(NumberOfPurchases, na.rm = TRUE),
+    Purchases = sum(PurchaseStatus == 1, na.rm = TRUE),
+    AverageTime = mean(TimeSpentOnWebsite, na.rm = TRUE),
+    
+    Total = n(),
+    Purchase_Percent = Purchases / Total * 100) |>
+  ungroup()
+    
+gender_x_purchase
 
 ```
 
-### Checking Purchase Status with Number Of Purchases?
+PurchaseStatus Percentage is split almost identically among males and females (slightly higher).
 
-Question: If PurchaseStatus is 0, why is there a nonempty NumberOfPurchases category for those rows?
+Question: Why is everything so evenly balanced?
 
--   NumberOfPurchases is historical, which PurchaseStatus is the most current.
+### Group By Time Spent on Website
 
 ```{r}
+
+time_spent <- shopping |> 
+  group_by(TimeSpentOnWebsite) |>
+  summarise()
+
+
 ```
+
+### Next\>
 
 ```{r}
 ## NEXT STEP: create a new column that introduces censoring (1 if customer bought something,

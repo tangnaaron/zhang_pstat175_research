@@ -19,7 +19,7 @@ library(here)
 
 ### Background
 
-Focus: Prediction of Retirement (Pick a Position? QB?)
+Focus: Prediction of Retirement for a Quarterback
 
 Source: [NFL Statistics](https://www.kaggle.com/datasets/kendallgillies/nflstatistics/data)
 
@@ -32,11 +32,15 @@ raw_passes <- read_csv(here("nfl", "data", "Career_Stats_Passing.csv"))
 raw_rushing <- read_csv(here("nfl", "data", "Career_Stats_Rushing.csv"))
 raw_fumbles <- read_csv(here("nfl", "data", "Career_Stats_Fumbles.csv"))
 
-
+print("Player Stats")
 colnames(raw_player)
+print("QB Stats")
 colnames(raw_qb_logs)
+print("Passes")
 colnames(raw_passes)
+print("Rushing")
 colnames(raw_rushing)
+print("Fumbles")
 colnames(raw_fumbles)
 
 ```
