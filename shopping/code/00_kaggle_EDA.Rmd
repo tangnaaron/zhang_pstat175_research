@@ -20,6 +20,8 @@ library(gridExtra)
 
 ## Background About Data:
 
+LINK: https://www.kaggle.com/datasets/rabieelkharoua/predict-customer-purchase-behavior-dataset
+
 data from where, collected how? , year? , purpose?
 
 ## Import Data
