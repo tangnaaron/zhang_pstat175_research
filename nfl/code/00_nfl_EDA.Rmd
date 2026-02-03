@@ -17,7 +17,7 @@ library(here)
 
 ```
 
-### Background
+### Background - for following week 2/11
 
 Focus: Prediction of Retirement for a Quarterback
 
