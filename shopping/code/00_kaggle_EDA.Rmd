@@ -150,7 +150,7 @@ ggplot(data = summary, mapping = aes(x = NumberOfPurchases, y = mean_time,
 Notes:
 - It appears that the longer the mean time spent on a website, the greater the likelihood someone is to purchase something 
 - Time spent on website seems to be relatively uniform across number of purchases
-# hi 
+
 ### Age on Time Spent
 ```{r}
 shopping_with_age_group <- shopping %>%
