@@ -17,11 +17,31 @@ library(here)
 
 ```
 
-### Background - for following week 2/11
+## Background of NFL Data 
 
-Focus: Prediction of Retirement for a Quarterback
+-   ***Prediction of Retirement for a Quarterback***
 
-Source: [NFL Statistics](https://www.kaggle.com/datasets/kendallgillies/nflstatistics/data)
+    -   **Event:** Retirement (Last game/season in NFL)
+
+    -   **Time Scale:** Number of Seasons/Games since debut
+
+    -   **Censoring:** QB still active at end of observation period
+
+-   **Source:** [NFL Statistics](https://www.kaggle.com/datasets/kendallgillies/nflstatistics/data)
+
+-   Relevant Files
+
+    1.  Basic_Stats
+
+        1.  Variables:
+
+    2.  Game_Logs_Quarterback
+
+    3.  Career_Stats_Passing
+
+    4.  Career_Stats_Rushing
+
+    5.  Career_Stats_Fumbles
 
 ### Import Data
 
@@ -31,16 +51,40 @@ raw_qb_logs <- read_csv(here("nfl", "data", "Game_Logs_Quarterback.csv"))
 raw_passes <- read_csv(here("nfl", "data", "Career_Stats_Passing.csv"))
 raw_rushing <- read_csv(here("nfl", "data", "Career_Stats_Rushing.csv"))
 raw_fumbles <- read_csv(here("nfl", "data", "Career_Stats_Fumbles.csv"))
+```
 
-print("Player Stats")
+### Read Data
+
+```{r}
+# see what variables are in each file 
 colnames(raw_player)
-print("QB Stats")
 colnames(raw_qb_logs)
-print("Passes")
 colnames(raw_passes)
-print("Rushing")
 colnames(raw_rushing)
-print("Fumbles")
 colnames(raw_fumbles)
 
+# Observe the data 
+head(raw_player, n=20)
+head(raw_qb_logs, n=20)
+head(raw_passes, n=20)
+head(raw_rushing, n=20)
+head(raw_fumbles, n=20)
 ```
+
+Key Limitations:
+
+-   Retirement is inferred, not observed
+
+    -   No games logged after season t
+
+    -   No reappearance in future seasons
+
+-   That introduces:
+
+    -   Potential misclassification (e.g., temporary exits)
+
+-   How fix:
+
+    -   Right-censor recent seasons
+
+    -   Acknowledge it explicitly
