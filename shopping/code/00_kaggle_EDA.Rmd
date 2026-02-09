@@ -147,11 +147,10 @@ ggplot(data = summary, mapping = aes(x = NumberOfPurchases, y = mean_time,
   geom_density(stat = 'identity', alpha = 0.5)
 ```
 
-Notes:
-- It appears that the longer the mean time spent on a website, the greater the likelihood someone is to purchase something 
-- Time spent on website seems to be relatively uniform across number of purchases
+Notes: - It appears that the longer the mean time spent on a website, the greater the likelihood someone is to purchase something - Time spent on website seems to be relatively uniform across number of purchases
 
 ### Age on Time Spent
+
 ```{r}
 shopping_with_age_group <- shopping %>%
   mutate(AgeGroup = case_when(
@@ -182,15 +181,11 @@ ggplot(data = summary, mapping = aes(x = AgeGroup, y = mean_time,
   geom_bar(stat = 'identity', position = 'dodge')
 ```
 
-### Age on PurchaseStatus 
+### Age on PurchaseStatus
+
 ```{r}
 ggplot(data = summary, mapping = aes(x = AgeGroup, y = n,
                                      fill = PurchaseStatus)) +
   geom_bar(stat = 'identity', position = 'dodge') 
 
 ```
-
-
-
-
-

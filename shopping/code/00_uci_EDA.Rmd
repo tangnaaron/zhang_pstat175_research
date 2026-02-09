@@ -1,0 +1,21 @@
+---
+title: "UCI Shopping EDA"
+author: "Aaron Tang"
+date: "2026-02-09"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(here)
+```
+
+```{r}
+# Loading data
+work_dir <- here()
+raw_data <- read_csv(file.path(work_dir, "shopping", "data", "raw_data", "uci_shopping.csv"))
+```
+
+
