@@ -14,10 +14,11 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(ggplot2)
 library(here)
+library(dplyr)
 
 ```
 
-## Background of NFL Data 
+## Background of NFL Data
 
 -   ***Prediction of Retirement for a Quarterback***
 
@@ -27,48 +28,72 @@ library(here)
 
     -   **Censoring:** QB still active at end of observation period
 
--   **Source:** [NFL Statistics](https://www.kaggle.com/datasets/kendallgillies/nflstatistics/data)
+-   **Source:** [NFL Statistics](https://www.kaggle.com/datasets/kendallgillies/nflstatistics/data) (scraped from official NFL website)
 
--   Relevant Files
+-   This data stops at 2016!
+
+-   Relevant Files Variables:
 
     1.  Basic_Stats
 
-        1.  Variables:
+        1.   Name/Player Id (not equal amount)
+        2.  Age/Birthday (use the one with less NA?), Height, Weight
+        3.  Current Status, Current Team (alot NA), Position (82% NA)
+        4.  Experience calculated from Years Played, Years Played (18% null)
 
     2.  Game_Logs_Quarterback
 
-    3.  Career_Stats_Passing
+        Since so many positions are NA, just use Name/Player Id and this file to identify the QBs.
+
+        Filter using Games Played
+
+        1.  restrict to just regular season (82%) ???
+
+        2.  Year, Season, Week, Game Date
+
+        3.  home/away (50/50 split), Outcome
+
+        4.  Games Played 0/1, Passed Completed, Passed Attempted, Completion Percentage, Passing Yards
+
+        5.  Yards Per Carry (Rushing Yards over Attempts, 62% NA)
+
+        6.  Sacks, Sacked Yards Lost, Interceptions, TD Passes (50% NA)
+
+        7.  Fumbles (88% NA)
+
+    3.  Career_Stats_Passing (overlap with variables above) - but this is CAREER STATS for each year - already accumulated compared to game logs
+
+        1.  Games Played (Filter if not enough games played that season/year)
+
+        2.  Interception Rate
 
     4.  Career_Stats_Rushing
 
+        1.  Rushing Yards Per Game
+
     5.  Career_Stats_Fumbles
 
-### Import Data
+        1.  Fumbles Lost
+
+## Import Data
 
 ```{r}
 raw_player <- read_csv(here("nfl", "data", "Basic_Stats.csv"))
 raw_qb_logs <- read_csv(here("nfl", "data", "Game_Logs_Quarterback.csv"))
+# very similar data as qb logs, but qb has a bit more 
 raw_passes <- read_csv(here("nfl", "data", "Career_Stats_Passing.csv"))
-raw_rushing <- read_csv(here("nfl", "data", "Career_Stats_Rushing.csv"))
-raw_fumbles <- read_csv(here("nfl", "data", "Career_Stats_Fumbles.csv"))
+#raw_rushing <- read_csv(here("nfl", "data", "Career_Stats_Rushing.csv"))
+#raw_fumbles <- read_csv(here("nfl", "data", "Career_Stats_Fumbles.csv"))
 ```
 
-### Read Data
+## Read Data
 
 ```{r}
-# see what variables are in each file 
-colnames(raw_player)
-colnames(raw_qb_logs)
-colnames(raw_passes)
-colnames(raw_rushing)
-colnames(raw_fumbles)
-
 # Observe the data 
-head(raw_player, n=20)
-head(raw_qb_logs, n=20)
-head(raw_passes, n=20)
-head(raw_rushing, n=20)
-head(raw_fumbles, n=20)
+head(raw_player)
+head(raw_qb_logs)
+head(raw_passes)
+
 ```
 
 Key Limitations:
@@ -79,12 +104,157 @@ Key Limitations:
 
     -   No reappearance in future seasons
 
--   That introduces:
+-   Watch for potential misclassification ( like temporary exits for injury, etc)
 
-    -   Potential misclassification (e.g., temporary exits)
+-   Fix using censoring –\> censor recent seasons (this data goes up to 2016 so maybe we can disregard 2015 up)
 
--   How fix:
+## Cleaning the Data 
 
-    -   Right-censor recent seasons
+### Filter Files for Statistics only on Quarterbacks 
 
-    -   Acknowledge it explicitly
+#### *Basic_Stats File*
+
+```{r}
+# get distinct QB player IDs
+qb_id <- raw_qb_logs |>
+  distinct(`Player Id`)
+
+# Clean player stats - ONLY QUARTERBACKS
+player_clean <- raw_player |>
+  semi_join(qb_id, by = "Player Id") |> 
+  select(`Player Id`, Name, Age,`Height (inches)`, `Weight (lbs)`, 
+         Experience, `Years Played`) |>
+  arrange(Name)
+player_clean
+
+# we can possibly calculate debut year using birth year - parse the birthday 
+# (if the football era is impactful (competition)
+
+```
+
+#### *Game_Logs_Quarterback File*
+
+```{r}
+# Game logs - regular season only
+# if any empty slots, replace with 0 for easy calculation of totals 
+qb_regular <- raw_qb_logs |> 
+  filter(Season == "Regular Season") |>
+  group_by(`Player Id`) |>
+  mutate(across(everything(), ~str_replace_all(., "--", "0"))) |>
+  mutate(Year = as.numeric(Year)) |>
+  ungroup()
+
+#desired variables 
+# TD-Int Ratio -> Efficiency 
+# Sacks -> injury risk -> early retirement 
+# run-pass-ratio (rushing yards/ passing yards) testing if mobile QBs retire earlier
+# run_pass_ratio = rushing_yards / passing_yards
+variables <- c( "Passes Completed", "Passes Attempted", "Completion Percentage",
+                "Passing Yards", "Sacks", "Ints", "TD Passes", "Rushing Yards")
+
+qb_career_summary <- qb_regular |>
+  select(-c(Week, `Passer Rating`)) |>
+  mutate(across(all_of(variables), as.numeric)) |>
+  group_by(`Player Id`, Name) |>
+  
+  summarise(
+    # Calculate career timeline for each QB
+    First_Year = min(Year, na.rm = TRUE),
+    Last_Year  = max(Year, na.rm = TRUE),
+    Total_Seasons = length(unique(Year)),
+    Total_Games = sum(`Games Played` == 1, na.rm = TRUE),
+
+    # Calculate Totals for Career 
+    across(all_of(variables[variables != "Completion Percentage"]),
+           sum, na.rm = TRUE),
+    .groups = "drop") |>
+  
+  mutate(
+    Time  = Last_Year - First_Year + 1, # survival time in seasons 
+    
+    # introduce censoring?? the last year is 2016 
+    # so maybe censor players active post-2015 are censored
+    # Adjust this threshold based on your data's latest year
+    # if retired or not (0/1)
+    Event = if_else(Last_Year >= 2015, 0, 1),
+
+    # efficiency
+    TD_INT = `TD Passes` / pmax(Ints, 1), # row wise math
+    
+    RUN_PASS = `Rushing Yards` / pmax(`Passing Yards`, 1),
+
+    # categorize career length
+    Career_Length = cut(Total_Seasons,
+                        breaks = c(0, 2, 5, 10, Inf),
+                        labels = c("1-2 seasons", "3-5 seasons", "6-10 seasons", "10+ seasons")))
+
+qb_career_summary
+# Note: 18 week seasons usually 
+
+```
+
+Notes:
+
+-   run-pass-ratio
+
+    -   Higher = more mobility, usually more hits from defenders, higher injury risk potentially
+
+        -   Indication: earlier retirement
+
+-   touchdown-interception-ratio
+
+    -   Higher = more TD, better decision-making, protects the ball
+
+        -   Indication: longer career
+
+#### Join Basic_Stats and QB_Logs File
+
+```{r}
+# keep everything in QB Logs
+qb_combined1 <- qb_career_summary |>
+  left_join(player_clean, by = "Player Id")
+
+# all say same thing: "total_seasons", "time", "Experience", "career_length", "Years Played"
+
+# reorder 
+order <- c("Player Id", "Name.x", "Event", "Age", "Height (inches)", "Weight (lbs)",
+           "First_Year", "Last_Year", "Time",
+           "Total_Games", "Passes Completed", "Passes Attempted", "Passing Yards", 
+           "Sacks", "Ints", "TD Passes", "Rushing Yards", "TD_INT", "RUN_PASS")
+
+qb_combined2 <- qb_combined1 |>
+  select(all_of(order)) |>
+  rename(Name = Name.x,
+         Retired = Event, 
+         Experience = Time)
+         
+qb_combined2
+
+```
+
+#### Export Clean Data: 
+
+```{r}
+safe_write_csv <- function(data, path) {
+  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+  readr::write_csv(data, path)}
+
+safe_write_csv(qb_combined2, here("nfl", "data","cleaned", "1_cleaned_nfl_data.csv"))
+```
+
+#### *Career_Stats_Passing File (might not use, similar to QB logs))* 
+
+```{r, eval= FALSE}
+# These are YEARLY career stats
+
+#passes <- raw_passes |>
+#  semi_join(qb_id, by = "Player Id") |>
+#  arrange(Name)
+#passes
+```
+
+## Explore Data / Missingness
+
+```{r}
+
+```
