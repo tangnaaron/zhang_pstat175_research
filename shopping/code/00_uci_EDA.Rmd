@@ -10,12 +10,122 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(ggplot2)
 library(here)
+library(knitr)
+library(gridExtra)
 ```
+
+Link to dataset: https://archive.ics.uci.edu/dataset/468/online+shoppers+purchasing+intention+dataset
 
 ```{r}
 # Loading data
 work_dir <- here()
-raw_data <- read_csv(file.path(work_dir, "shopping", "data", "raw_data", "uci_shopping.csv"))
+raw_data <- read_csv(file.path(work_dir, "shopping", "data", "raw_data", "uci_shopping.csv"), show_col_types =  FALSE)
+head(raw_data)
 ```
 
+## Description of Variables 
+### Continuous 
+- `Administrative`: Number of pages visited about account management 
+- `Administrative Duration`: Total amount of time (in seconds) spent on account management related pages
+- `Informational`: Number of pages visited about website, communication and address information of the shopping site
+- `Informational Duration`: Total amount of time spent on informational pages
+- `Product Related`: Number of pages visited about product related pages
+- `Product Related Duration`: Total amount of time spent on product related pages
+\
+
+* `Bounce Rate`: Average bounce rate value of the pages visited
+  - Formula: $Bounce Rate = 1 - Engagement Rate$ 
+  - $Engagement Rate$ = percentage of sessions that either lasted longer than 10 seconds, had key events, or two or more screen or page views
+\
+  - Google Analytics assigns this value to every page of a website 
+  - This feature takes the average of all the bounce rates value from all the pages the user visits in a single session
+- `Exit Rate`: Average exit rate value of the pages visited
+  - Formula: $Exit Rate = \frac{Number Of Exits}{Number Of Page Views} \times 100$
+- `Page Value`: Average page value of the pages visited
+  - Formula: $Page Value = \frac{Total Revenue + Total Goal Value}{Unique Page Views}$
+  - $Total Revenue$ = amount of money generated from a website page (i.e. transaction page)
+  - $Total Goal Value$ = value assigned to a specific page that is defined by the business 
+  - $Unique Page Views$ = number of unique user visits, only counted once per session 
+\
+
+- `Special Day`: Closeness of the site visiting time to a special day 
+
+### Categorical 
+- `OperatingSystems`: Operating system of the visitor
+- `Browser`: Browser of the visitor 
+- `Region`: Geographic region from which the session has been started by the visitor 
+- `TrafficType`: Traffic source by which the visitor has arrived at the wesbite
+- `VisitorType`: Visitor type as "New Visitor", "Returning Visitor", and "Other"
+- `Weekend`: Boolean value indicating whether the date of the visit is a weekend 
+- `Month`: Month value of the visit date
+- `Revenue`: Class label indicating whether the visit has been finalized with a transaction 
+
+## Summary
+```{r}
+continuous_var <- c("Administrative", "Administrative_Duration", "Informational", 
+                    "Informational_Duration", "ProductRelated", "ProductRelated_Duration",
+                    "BounceRates", "ExitRates", "PageValues")
+
+categorical_var <- c("Month", "OperatingSystems", "Browser", "Region", "TrafficType",
+                     "VisitorType", "Weekend", "Revenue")
+
+shopping_uci <- raw_data %>%
+  mutate(across(all_of(categorical_var), as.factor))
+
+summary(shopping_uci)
+```
+
+
+## Bar Charts/Histograms of Variables 
+```{r, out.width='50%', fig.show = 'hold', warning=FALSE, message = FALSE}
+# Histograms of Continuous Variables 
+par(mfrow = c(2, 3))
+
+for (i in 1:length(continuous_var)) {
+  current = shopping_uci[[continuous_var[i]]]
+  plot <- ggplot(data = shopping_uci, mapping = aes(x = current)) +
+    geom_histogram() +
+    labs(
+      y = "Frequency",
+      x = continuous_var[i],
+      title = paste("Histogram of ", continuous_var[i])
+    ) +
+    scale_y_log10()
+  
+  print(plot)
+}
+```
+\
+\
+
+Notes:
+
+- I logged the scale of the y-axes because they were all heavily zero-inflated
+- After log transforming the scale, it appears the duration graphs follow a somewhat exponential distribution 
+- The rates appear to be a little left skewed 
+
+
+```{r}
+# Bar Charts of Categorical Variables
+par(mfrow = c(2, 2))
+
+for (i in 1:length(categorical_var)) {
+  current_var_count <- shopping_uci %>% group_by(across(all_of(categorical_var[i]))) %>% summarize(count = n())
+  
+  barplot(height = current_var_count$count,
+          names.arg = current_var_count %>% pull(1),
+          xlab = categorical_var[i],
+          ylab = "Count",
+          main = paste("Frequency of", categorical_var[i]))
+}
+```
+
+## Seeing if I can combine the durations 
+```{r}
+# Box plots 
+admin_duration <- ggplot(data = shopping_uci, mapping = aes(x = Revenue, y = Administrative_Duration)) +
+  geom_boxplot()
+
+admin_duration
+```
 
