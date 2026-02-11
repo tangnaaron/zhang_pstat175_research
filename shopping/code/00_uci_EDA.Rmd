@@ -12,6 +12,7 @@ library(ggplot2)
 library(here)
 library(knitr)
 library(gridExtra)
+library(corrplot)
 ```
 
 Link to dataset: https://archive.ics.uci.edu/dataset/468/online+shoppers+purchasing+intention+dataset
@@ -19,7 +20,8 @@ Link to dataset: https://archive.ics.uci.edu/dataset/468/online+shoppers+purchas
 ```{r}
 # Loading data
 work_dir <- here()
-raw_data <- read_csv(file.path(work_dir, "shopping", "data", "raw_data", "uci_shopping.csv"), show_col_types =  FALSE)
+raw_data <- read_csv(file.path(work_dir, "shopping", "data", "raw_data", "uci_shopping.csv"), 
+                     show_col_types =  FALSE)
 head(raw_data)
 ```
 
@@ -110,7 +112,9 @@ Notes:
 par(mfrow = c(2, 2))
 
 for (i in 1:length(categorical_var)) {
-  current_var_count <- shopping_uci %>% group_by(across(all_of(categorical_var[i]))) %>% summarize(count = n())
+  current_var_count <- shopping_uci %>% 
+    group_by(across(all_of(categorical_var[i]))) %>% 
+    summarize(count = n())
   
   barplot(height = current_var_count$count,
           names.arg = current_var_count %>% pull(1),
@@ -120,12 +124,86 @@ for (i in 1:length(categorical_var)) {
 }
 ```
 
-## Seeing if I can combine the durations 
+## Seeing if combining durations is useful 
 ```{r}
-# Box plots 
-admin_duration <- ggplot(data = shopping_uci, mapping = aes(x = Revenue, y = Administrative_Duration)) +
+# Creating new dataset with total durations
+shopping_uci_total_durations <- shopping_uci %>%
+  mutate(Total_Duration = Administrative_Duration + Informational_Duration + ProductRelated_Duration)
+
+shopping_uci_total_durations
+```
+
+```{r}
+# Checking to see if total duration correlates with other individual durations 
+corr_values <- shopping_uci_total_durations %>%
+  select(c(Administrative_Duration, Informational_Duration, ProductRelated_Duration, Total_Duration)) %>%
+  cor()
+
+corrplot(
+  corr_values,
+  diag = FALSE,
+  method = "color",
+  tl.col = "black"
+)
+```
+Notes:
+
+- `Total_Duration` seems to correlate with the other individual durations, especially `ProductRelated_Duration`
+- From this, it may be safe to sum up the individual durations into one variable, as it looks like we would not lose that much information if we perform this operation
+
+
+## Multivariate analysis  
+```{r}
+# Box plots
+total_duration <- ggplot(data = shopping_uci_total_durations, mapping = aes(x = Revenue, y = Total_Duration)) +
+  geom_boxplot()
+bounce <- ggplot(data = shopping_uci_total_durations, mapping = aes(x = Revenue, y = BounceRates)) +
+  geom_boxplot()
+exit <- ggplot(data = shopping_uci_total_durations, mapping = aes(x = Revenue, y = ExitRates)) +
+  geom_boxplot()
+page <- ggplot(data = shopping_uci_total_durations, mapping = aes(x = Revenue, y = PageValues)) +
   geom_boxplot()
 
-admin_duration
+grid.arrange(total_duration, bounce, exit, page, ncol = 2)
+```
+
+Nothing really useful here.
+
+```{r}
+# Scatter plots 
+ggplot(data = shopping_uci_total_durations, mapping = aes(x = Total_Duration, y = BounceRates,
+                                                          color = Revenue)) +
+  geom_point(alpha = 0.5) +
+  coord_cartesian(xlim = c(0, 1000))
+```
+
+```{r}
+ggplot(data = shopping_uci_total_durations, mapping = aes(x = Total_Duration, y = ExitRates,
+                                                          color = Revenue)) +
+  geom_point(alpha = 0.5) +
+  coord_cartesian(xlim = c(0, 1000))
+```
+
+```{r}
+ggplot(data = shopping_uci_total_durations, mapping = aes(x = Total_Duration, y = PageValues,
+                                                          color = Revenue)) +
+  geom_point(alpha = 0.5) +
+  coord_cartesian(xlim = c(0, 1000))
+```
+
+Nothing really useful can extracted from this as well
+
+```{r}
+# Correlation plot between rates 
+corr_values <- shopping_uci_total_durations %>%
+  select(c(BounceRates, ExitRates, PageValues)) %>%
+  cor()
+
+corrplot(
+  corr_values,
+  diag = FALSE,
+  method = "color",
+  tl.col = "black"
+)
 ```
 
