@@ -29,7 +29,7 @@ library(corrplot)
 
     -   **Censoring:** QB still active at end of observation period
 
--   **Source:** [NFL Statistics](https://www.kaggle.com/datasets/kendallgillies/nflstatistics/data) (scraped from official NFL website)
+-   **Source:** [NFL Statistics](https://www.kaggle.com/datasets/kendallgillies/nflstatistics/data) (scraped from official NFL website), [Article](https://fonseca-carlos.medium.com/predicting-qb-retirement-with-survival-analysis-or-can-data-tell-if-brady-will-play-till-50-5d0c4b8c24e9)
 
 -   This data stops at 2016!
 
