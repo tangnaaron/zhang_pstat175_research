@@ -15,6 +15,7 @@ library(tidyverse)
 library(ggplot2)
 library(here)
 library(dplyr)
+library(corrplot)
 
 ```
 
@@ -36,10 +37,13 @@ library(dplyr)
 
     1.  Basic_Stats
 
-        1.   Name/Player Id (not equal amount)
+        1.  Name/Player Id (not equal amount)
         2.  Age/Birthday (use the one with less NA?), Height, Weight
+            1.  Take out Age because its calculating from Birthday to Now
+            2.  ***Maybe Calculate Debut Age?*** older rookies retire sooner
         3.  Current Status, Current Team (alot NA), Position (82% NA)
         4.  Experience calculated from Years Played, Years Played (18% null)
+            1.  ***EXPERIENCE IS THE SURVIVAL TIME (the OUTCOME)***
 
     2.  Game_Logs_Quarterback
 
@@ -67,21 +71,13 @@ library(dplyr)
 
         2.  Interception Rate
 
-    4.  Career_Stats_Rushing
-
-        1.  Rushing Yards Per Game
-
-    5.  Career_Stats_Fumbles
-
-        1.  Fumbles Lost
-
 ## Import Data
 
 ```{r}
-raw_player <- read_csv(here("nfl", "data", "Basic_Stats.csv"))
-raw_qb_logs <- read_csv(here("nfl", "data", "Game_Logs_Quarterback.csv"))
+raw_player <- read_csv(here("nfl", "data", "Basic_Stats.csv"), show_col_types = FALSE)
+raw_qb_logs <- read_csv(here("nfl", "data", "Game_Logs_Quarterback.csv"), show_col_types = FALSE)
 # very similar data as qb logs, but qb has a bit more 
-raw_passes <- read_csv(here("nfl", "data", "Career_Stats_Passing.csv"))
+raw_passes <- read_csv(here("nfl", "data", "Career_Stats_Passing.csv"), show_col_types = FALSE)
 #raw_rushing <- read_csv(here("nfl", "data", "Career_Stats_Rushing.csv"))
 #raw_fumbles <- read_csv(here("nfl", "data", "Career_Stats_Fumbles.csv"))
 ```
@@ -108,9 +104,9 @@ Key Limitations:
 
 -   Fix using censoring –\> censor recent seasons (this data goes up to 2016 so maybe we can disregard 2015 up)
 
-## Cleaning the Data 
+## Cleaning the Data
 
-### Filter Files for Statistics only on Quarterbacks 
+### Filter Files for Statistics only on Quarterbacks
 
 #### *Basic_Stats File*
 
@@ -140,9 +136,10 @@ player_clean
 qb_regular <- raw_qb_logs |> 
   filter(Season == "Regular Season") |>
   group_by(`Player Id`) |>
-  mutate(across(everything(), ~str_replace_all(., "--", "0"))) |>
+  mutate(across(everything(), ~str_replace_all(., "--", "NA"))) |>
   mutate(Year = as.numeric(Year)) |>
   ungroup()
+qb_regular
 
 #desired variables 
 # TD-Int Ratio -> Efficiency 
@@ -213,6 +210,7 @@ Notes:
 # keep everything in QB Logs
 qb_combined1 <- qb_career_summary |>
   left_join(player_clean, by = "Player Id")
+qb_combined1
 
 # all say same thing: "total_seasons", "time", "Experience", "career_length", "Years Played"
 
@@ -226,13 +224,19 @@ qb_combined2 <- qb_combined1 |>
   select(all_of(order)) |>
   rename(Name = Name.x,
          Retired = Event, 
-         Experience = Time)
+         Experience = Time) |>
+  mutate(Completion_Percentage = `Passes Completed`/`Passes Attempted`,
+         Era = case_when(First_Year < 1980 ~ "1970-1980",
+                         First_Year < 1990 ~ "1980-1990",
+                         First_Year < 1999 ~ "1990-1999",
+                         First_Year < 2010 ~ "2000-2010",
+                         TRUE ~ "2010+"))
          
 qb_combined2
 
 ```
 
-#### Export Clean Data: 
+#### Export Clean Data:
 
 ```{r}
 safe_write_csv <- function(data, path) {
@@ -242,7 +246,7 @@ safe_write_csv <- function(data, path) {
 safe_write_csv(qb_combined2, here("nfl", "data","cleaned", "1_cleaned_nfl_data.csv"))
 ```
 
-#### *Career_Stats_Passing File (might not use, similar to QB logs))* 
+#### *Career_Stats_Passing File (might not use, similar to QB logs))*
 
 ```{r, eval= FALSE}
 # These are YEARLY career stats
@@ -253,8 +257,192 @@ safe_write_csv(qb_combined2, here("nfl", "data","cleaned", "1_cleaned_nfl_data.c
 #passes
 ```
 
-## Explore Data / Missingness
+## Explore Data
+
+```{r}
+summary(qb_combined2)
+# Check dimensions
+print(paste("Number of QBs:", nrow(qb_combined2)))
+print(paste("Number of variables:", ncol(qb_combined2)))
+```
+
+Notes:
+
+-   Age - 81??? Won't be a good variable because its counting their age from birthday until 2016
+
+-   Year - 1970 to 2016
+
+-   RUN_PASS negative because rushing yards is negative (ex. lose yards if sacked)
+
+#### Missingness
+
+```{r}
+empty_columns <- colSums(qb_combined2 == 0, na.rm = TRUE)
+empty_columns
+```
+
+Notes:
+
+-   Some players enter the league for a very short time, and don't play a game at all. We can filter out players who have no Total_Games (Experience is usually 1).
+
+-   98 of 466 NFL players are shown to not be retired (censored to cut off 2015-2016 season). Should we change this cutoff?
+
+Issues:
+
+-   Career totals are functions of survival time so they leak outcome into the predictors so we use game stats, not career ones
+
+-   Filter Experience \> 2 as most empty values come from those with 2 or less years in the league.
+
+-   Took Age Out
+
+-   Longer Career = Larger Total –\> Turn Everything into Ratios
+
+```{r}
+# redued around 150 rows - should we keep or remove? 
+qb_combined3 <- qb_combined2 |>
+  filter(Experience > 2) |>
+  mutate(
+    Yards_per_game = `Passing Yards` / Total_Games,
+    Sacks_per_game = Sacks / Total_Games,
+    TD_per_game   = `TD Passes` / Total_Games,
+    Ints_per_game  = Ints / Total_Games,
+    Rush_per_game = `Rushing Yards`/ Total_Games) |>
+  select(-c("Age", "Passing Yards", "Sacks", "TD Passes", "Ints", "Rushing Yards", 
+            "Passes Completed", "Passes Attempted", "Last_Year"))
+            #"Total_Games", "Experience"))
+
+qb_combined3
+
+safe_write_csv(qb_combined3, here("nfl", "data","cleaned", "2_cleaned_nfl_data.csv"))
+
+empty_columns1 <- colSums(qb_combined3 == 0, na.rm = TRUE)
+empty_columns1
+colnames(qb_combined3)
+
+```
+
+#### Visuals for Distribution of Variables
+
+Player Variables
+
+```{r}
+vars <- c("Height (inches)", "Weight (lbs)", "TD_INT", "RUN_PASS", "Completion_Percentage")
+
+# set up a 2 x 3 grid to display all histograms together 
+par(mfrow = c(2,3))
+#par(mfrow = c(3, 3))
+
+for (i in 1:length(vars)) { #game_stats
+  current = qb_combined3[[vars[i]]] # get rows of that variable
+  hist(current,
+       xlab = vars[i], 
+       main = paste("Histogram of", vars[i]),
+       col = "lightblue",
+       freq = FALSE)
+}
+
+# reset back to default 
+par(mfrow = c(1, 1))
+
+```
+
+Player Specific Stat Variables
+
+```{r}
+other <- c("Yards_per_game", "Sacks_per_game", "TD_per_game", "Ints_per_game", "Rush_per_game")
+
+# set up a 3 x 3 grid to display all histograms together 
+par(mfrow = c(2, 3))
+
+for (i in 1:length(other)) { #game_stats
+  current = qb_combined3[[other[i]]] # get rows of that variable
+  hist(current,
+       xlab = other[i], 
+       main = paste("Histogram of", other[i]),
+       col = "lightblue",
+       freq = FALSE)
+}
+
+# reset back to default 
+par(mfrow = c(1, 1))
+
+```
+
+Note: Roughly normally distributed or right-skewed
+
+#### **Era Bar Plot Distribution**
+
+```{r}
+ggplot(qb_combined3, aes(x=Era)) + 
+  geom_bar(fill="pink") + 
+  labs(x = "Era", y = "Count") +
+  theme_minimal()
+  
+```
+
+FIXX
+
+#### **Correlation Matrix of Numerical Variables**
+
+Taken Out Due to Too High of Correlation –\> Multicollinearity (repetition of same info)
+
+-   "Last_Year" –\> Already have First_Year and Experience (Years/Seasons)
+
+-   "Passes Attempted", "Passing Yards" -\> Completion_Percentage
+
+-   "Ints", "TD Passes" -\> already combined with TD_INT ratio
+
+-   Since Total_Games and Sacks are heavily correlated, changed to Sacks_per_game
 
 ```{r}
 
+quant_var <- qb_combined3 |>
+  select("Height (inches)", "Weight (lbs)", "First_Year",
+         "Yards_per_game", "Sacks_per_game", "TD_per_game", 
+         "Ints_per_game", "Rush_per_game", "TD_INT", 
+         "RUN_PASS", "Completion_Percentage")
+         #"Total_Games", "Experience")
+quant_matrix <- cor(quant_var, use = "complete.obs")
+corrplot(quant_matrix, method = "color", type = "upper")
+  
+```
+
+**Distribution of Career Length**
+
+```{r}
+p1 <- ggplot(qb_combined3, aes(x = Experience)) +
+  geom_histogram(binwidth = 1, fill = "lightblue", color = "white") +
+  labs(title = "Distribution of Career Length",
+       x = "Seasons in NFL",
+       y = "Number of QBs") +
+  theme_minimal()
+
+print(p1)
+```
+
+```{r}
+ggplot(qb_combined3, aes(x = factor(Retired), y = TD_INT)) +
+  geom_violin(fill = "lightblue") +
+  geom_jitter(width = 0.1, alpha = 0.3, color = "blue") +
+  labs(x = "Retired", y = "TD_INT RATIO")
+
+ggplot(qb_combined3, aes(x = factor(Retired), y = Yards_per_game)) +
+  geom_violin(fill = "lightblue") +
+  geom_jitter(width = 0.1, alpha = 0.3, color = "blue") +
+  labs(x = "Retired", y = "Passing Yards Per Game")
+
+ggplot(qb_combined3, aes(x = factor(Retired), y = TD_per_game)) +
+  geom_violin(fill = "lightblue") +
+  geom_jitter(width = 0.1, alpha = 0.3, color = "blue") +
+  labs(x = "Retired", y = "Touchdowns Per Game")
+
+ggplot(qb_combined3, aes(x = factor(Retired), y = Ints_per_game)) +
+  geom_violin(fill = "lightblue") +
+  geom_jitter(width = 0.1, alpha = 0.3, color = "blue") +
+  labs(x = "Retired", y = "Interceptions Per Game")
+
+ggplot(qb_combined3, aes(x = factor(Retired), y = `Weight (lbs)`)) +
+  geom_violin(fill = "lightblue") +
+  geom_jitter(width = 0.1, alpha = 0.3, color = "blue") +
+  labs(x = "Retired", y = "Weight")
 ```
