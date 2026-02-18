@@ -185,6 +185,11 @@ ggplot(data = shopping_uci_total_durations, mapping = aes(x = Total_Duration, y 
 ```
 
 ```{r}
+shopping_uci_total_durations |> 
+ggplot(mapping = aes(x = Total_Duration, y = PageValues ))+
+  geom_hex(alpha = 0.5) +
+  xlim(0, 1000)
+
 ggplot(data = shopping_uci_total_durations, mapping = aes(x = Total_Duration, y = PageValues,
                                                           color = Revenue)) +
   geom_point(alpha = 0.5) +
@@ -206,4 +211,53 @@ corrplot(
   tl.col = "black"
 )
 ```
+```{r}
+ggplot(data = shopping_uci_total_durations, mapping = aes(x = Revenue, y = Total_Duration)) +
+  geom_boxplot() +
+  ylim(0, 1000)
+```
+
+# EDA with cleaned data 
+
+```{r}
+# Read preprocessed data
+uci_transformed <- read_csv(file.path(work_dir, "shopping", "data", "intermediate_data",
+                                      "01_uci_preprocessed.csv"))
+
+head(uci_transformed)
+```
+## Description of variables 
+- `TotalDuration`: sum of the `Administrative_Duration`, `Informational_Duration`, and `ProductRelated_Duration`
+- `TimeThreshold`: time cutoff; obtained by randomly sampling uniformly from [10, 1800]
+- `CensorTime`: total duration of time with censoring; obtained by getting minimum of `TotalDuration` and `TimeThreshold`
+- `Censor`: indicator variable signaling censorship 
+
+## EDA
+```{r}
+# Boxplots
+uci_transformed$Censor = as.factor(uci_transformed$Censor)
+
+bounce <- uci_transformed %>%
+  filter(BounceRates > 0) %>%
+  ggplot(mapping = aes(x = Censor, y = BounceRates)) +
+  geom_boxplot()
+
+exit <- ggplot(data = uci_transformed, mapping = aes(x = Censor, y = ExitRates)) +
+  geom_boxplot()
+
+page <- uci_transformed %>%
+  filter(PageValues > 0) %>%
+  ggplot(mapping = aes(x = Censor, y = PageValues)) +
+  geom_boxplot() +
+  ylim(0, 100)
+
+grid.arrange(bounce, exit, page, ncol = 2)
+```
+
+Notes:
+
+- I filtered out the 0 values in the BounceRates and PageValues graph
+- It looks like non-censored data has higher bounce rates, exit rates, and page values. I feel like this makes sense because the non-censored data will be under the time threshold, which probably means these users are more likely to be on webpages with higher bounce rates and exit rates. 
+
+
 
