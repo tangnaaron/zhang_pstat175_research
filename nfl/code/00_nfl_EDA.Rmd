@@ -14,33 +14,728 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(ggplot2)
 library(here)
+library(dplyr)
+library(corrplot)
 
 ```
 
-### Background
+## Background of NFL Data
 
-Focus: Prediction of Retirement for a Quarterback
+-   ***Prediction of Retirement for a Quarterback***
 
-Source: [NFL Statistics](https://www.kaggle.com/datasets/kendallgillies/nflstatistics/data)
+    -   **Event:** Retirement (Last game/season in NFL)
 
-### Import Data
+    -   **Time Scale:** Number of Seasons/Games since debut
+
+    -   **Censoring:** QB still active at end of observation period
+
+-   **Source:** [NFL Statistics](https://www.kaggle.com/datasets/kendallgillies/nflstatistics/data) (scraped from official NFL website), [Article](https://fonseca-carlos.medium.com/predicting-qb-retirement-with-survival-analysis-or-can-data-tell-if-brady-will-play-till-50-5d0c4b8c24e9)
+
+-   This data stops at 2016!
+
+-   Relevant Files Variables:
+
+    1.  Basic_Stats
+
+        1.  Name/Player Id (not equal amount)
+        2.  Age/Birthday (use the one with less NA?), Height, Weight
+            1.  Take out Age because its calculating from Birthday to Now
+            2.  ***Maybe Calculate Debut Age?*** older rookies retire sooner
+        3.  Current Status, Current Team (alot NA), Position (82% NA)
+        4.  Experience calculated from Years Played, Years Played (18% null)
+            1.  ***EXPERIENCE IS THE SURVIVAL TIME (the OUTCOME)***
+
+    2.  Game_Logs_Quarterback
+
+        Since so many positions are NA, just use Name/Player Id and this file to identify the QBs.
+
+        Filter using Games Played
+
+        1.  restrict to just regular season (82%) ???
+
+        2.  Year, Season, Week, Game Date
+
+        3.  home/away (50/50 split), Outcome
+
+        4.  Games Played 0/1, Passed Completed, Passed Attempted, Completion Percentage, Passing Yards
+
+        5.  Yards Per Carry (Rushing Yards over Attempts, 62% NA)
+
+        6.  Sacks, Sacked Yards Lost, Interceptions, TD Passes (50% NA)
+
+        7.  Fumbles (88% NA)
+
+    3.  Career_Stats_Passing (overlap with variables above) - but this is CAREER STATS for each year - already accumulated compared to game logs
+
+        1.  Games Played (Filter if not enough games played that season/year)
+
+        2.  Interception Rate
+
+## Import Data
 
 ```{r}
-raw_player <- read_csv(here("nfl", "data", "Basic_Stats.csv"))
-raw_qb_logs <- read_csv(here("nfl", "data", "Game_Logs_Quarterback.csv"))
-raw_passes <- read_csv(here("nfl", "data", "Career_Stats_Passing.csv"))
-raw_rushing <- read_csv(here("nfl", "data", "Career_Stats_Rushing.csv"))
-raw_fumbles <- read_csv(here("nfl", "data", "Career_Stats_Fumbles.csv"))
+raw_player <- read_csv(here("nfl", "data", "Basic_Stats.csv"), show_col_types = FALSE)
+raw_qb_logs <- read_csv(here("nfl", "data", "Game_Logs_Quarterback.csv"), show_col_types = FALSE)
+# very similar data as qb logs, but qb has a bit more 
+raw_passes <- read_csv(here("nfl", "data", "Career_Stats_Passing.csv"), show_col_types = FALSE)
+#raw_rushing <- read_csv(here("nfl", "data", "Career_Stats_Rushing.csv"))
+#raw_fumbles <- read_csv(here("nfl", "data", "Career_Stats_Fumbles.csv"))
+```
 
-print("Player Stats")
-colnames(raw_player)
-print("QB Stats")
-colnames(raw_qb_logs)
-print("Passes")
-colnames(raw_passes)
-print("Rushing")
-colnames(raw_rushing)
-print("Fumbles")
-colnames(raw_fumbles)
+## Read Data
 
+```{r}
+# Observe the data 
+head(raw_player)
+head(raw_qb_logs)
+head(raw_passes)
+
+```
+
+Key Limitations:
+
+-   Retirement is inferred, not observed
+
+    -   No games logged after season t
+
+    -   No reappearance in future seasons
+
+-   Watch for potential misclassification ( like temporary exits for injury, etc)
+
+-   Fix using censoring –\> censor recent seasons (this data goes up to 2016 so maybe we can disregard 2015 up)
+
+## Cleaning the Data
+
+### Filter Files for Statistics only on Quarterbacks
+
+#### *Basic_Stats File*
+
+```{r}
+# get distinct QB player IDs
+qb_id <- raw_qb_logs |>
+  distinct(`Player Id`)
+
+# Clean player stats - ONLY QUARTERBACKS
+player_clean <- raw_player |>
+  semi_join(qb_id, by = "Player Id") |> 
+  select(`Player Id`, Name, Age,`Height (inches)`, `Weight (lbs)`, 
+         Experience, `Years Played`) |>
+  arrange(Name)
+player_clean
+
+# we can possibly calculate debut year using birth year - parse the birthday 
+# (if the football era is impactful (competition)
+
+```
+
+#### *Game_Logs_Quarterback File*
+
+Part 1
+
+```{r}
+# Game logs - regular season only
+# if any empty slots, replace with 0 for easy calculation of totals 
+qb_regular <- raw_qb_logs |> 
+  filter(Season == "Regular Season") |>
+  group_by(`Player Id`) |>
+  mutate(across(everything(), ~str_replace_all(., "--", "NA"))) |>
+  mutate(Year = as.numeric(Year)) |>
+  ungroup()
+qb_regular
+
+# to get stats only for debut year
+qb_first_year <- qb_regular |>
+  group_by(`Player Id`) |>
+  filter(Year == min(Year)) |>
+  ungroup()
+qb_first_year
+
+# to get stats only for first 3 years 
+qb_3_years <- qb_regular |> 
+  group_by(`Player Id`) |>
+  filter(Year <= min(Year) + 2) |>
+  ungroup()
+qb_3_years
+
+```
+
+Part 2
+
+```{r}
+#desired variables 
+# TD-Int Ratio -> Efficiency 
+# Sacks -> injury risk -> early retirement 
+# run-pass-ratio (rushing yards/ passing yards) testing if mobile QBs retire earlier
+# run_pass_ratio = rushing_yards / passing_yards
+variables <- c( "Passes Completed", "Passes Attempted", "Completion Percentage",
+                "Passing Yards", "Sacks", "Ints", "TD Passes", "Rushing Yards")
+
+qb_career_summary <- qb_regular |>
+  select(-c(Week, `Passer Rating`)) |>
+  mutate(across(all_of(variables), as.numeric)) |>
+  group_by(`Player Id`, Name) |>
+  
+  summarise(
+    # Calculate career timeline for each QB
+    First_Year = min(Year, na.rm = TRUE),
+    Last_Year  = max(Year, na.rm = TRUE),
+    Total_Seasons = length(unique(Year)),
+    Total_Games = sum(`Games Played` == 1, na.rm = TRUE),
+
+    # Calculate Totals for Career 
+    across(all_of(variables[variables != "Completion Percentage"]),
+           sum, na.rm = TRUE),
+    .groups = "drop") |>
+  
+  mutate(
+    Time  = Last_Year - First_Year + 1, # survival time in seasons 
+    bigT = 2016 - First_Year, # first year is debut year 
+    
+    # natural censoring: the last year is 2016 
+    # Adjust this threshold based on your data's latest year
+    # if retired or not (0/1)
+    Event = if_else(Last_Year >= 2016, 0, 1),
+
+    # efficiency
+    TD_INT = `TD Passes` / pmax(Ints, 1), # row wise math
+    
+    RUN_PASS = `Rushing Yards` / pmax(`Passing Yards`, 1),
+
+    # categorize career length
+    Career_Length = cut(Total_Seasons,
+                        breaks = c(0, 2, 5, 10, Inf),
+                        labels = c("1-2 seasons", "3-5 seasons", "6-10 seasons", "10+ seasons")))
+
+# debut year stats
+qb_debut_summary <- qb_first_year |>   
+  select(-c(Week, `Passer Rating`)) |>
+  mutate(across(all_of(variables), as.numeric)) |>
+  group_by(`Player Id`, Name) |>
+  
+  summarise(
+    Debut_Year_Games = sum(`Games Played` == 1, na.rm = TRUE),
+    Last_Year  = max(Year, na.rm = TRUE),
+
+    # Calculate Totals for Career 
+    across(all_of(variables[variables != "Completion Percentage"]),
+           sum, na.rm = TRUE),
+    .groups = "drop") |>
+  
+  mutate(
+    Debut_TD_INT = `TD Passes` / pmax(Ints, 1), # row wise math
+    Debut_RUN_PASS = `Rushing Yards` / pmax(`Passing Yards`, 1),
+    Event = if_else(Last_Year >= 2016, 0, 1))
+
+# first 3 years 
+qb_3year_summary <- qb_3_years |>   
+  select(-c(Week, `Passer Rating`)) |>
+  mutate(across(all_of(variables), as.numeric)) |>
+  group_by(`Player Id`, Name) |>
+  
+  summarise(
+    Three_Year_Games = sum(`Games Played` == 1, na.rm = TRUE),
+    Last_Year  = max(Year, na.rm = TRUE),
+
+    # Calculate Totals for Career 
+    across(all_of(variables[variables != "Completion Percentage"]),
+           sum, na.rm = TRUE),
+    .groups = "drop") |>
+  
+  mutate(
+    Three_Year_TD_INT = `TD Passes` / pmax(Ints, 1), # row wise math
+    Three_Year_RUN_PASS = `Rushing Yards` / pmax(`Passing Yards`, 1),
+    Event = if_else(Last_Year >= 2016, 0, 1))
+
+# Note: 18 week seasons usually 
+qb_career_summary
+qb_debut_summary
+qb_3year_summary
+```
+
+Notes:
+
+-   run-pass-ratio
+
+    -   Higher = more mobility, usually more hits from defenders, higher injury risk potentially
+
+        -   Indication: earlier retirement
+
+-   touchdown-interception-ratio
+
+    -   Higher = more TD, better decision-making, protects the ball
+
+        -   Indication: longer career
+
+#### Join Basic_Stats and QB_Logs File
+
+```{r}
+# keep everything in QB Logs
+qb_combined1 <- qb_career_summary |>
+  left_join(player_clean, by = "Player Id") |>
+  # Age is their age currently in the year of 2016
+         # 2016 - First Year calculates time since they debuted and 
+         # subtract these years to get debut age  
+  mutate(Debut_Age = Age - (2016 - First_Year))
+qb_combined1
+
+# all say same thing: "total_seasons", "time", "Experience", "career_length", "Years Played"
+
+# reorder 
+order <- c("Player Id", "Name.x", "Event", "Debut_Age", "Height (inches)", "Weight (lbs)",
+           "First_Year", "Last_Year", "Time",
+           "Total_Games", "Passes Completed", "Passes Attempted", "Passing Yards", 
+           "Sacks", "Ints", "TD Passes", "Rushing Yards", "TD_INT", "RUN_PASS")
+
+qb_combined2 <- qb_combined1 |>
+  select(all_of(order)) |>
+  rename(Name = Name.x,
+         Retired = Event, 
+         Experience = Time) |>
+  mutate(Completion_Percentage = `Passes Completed`/`Passes Attempted`,
+         Era = case_when(First_Year < 1980 ~ "1970-1980",
+                         First_Year < 1990 ~ "1980-1990",
+                         First_Year < 1999 ~ "1990-1999",
+                         First_Year < 2010 ~ "2000-2010",
+                         TRUE ~ "2010+"))
+         
+qb_combined2
+
+```
+
+#### Export Clean Data:
+
+```{r}
+safe_write_csv <- function(data, path) {
+  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+  readr::write_csv(data, path)}
+
+safe_write_csv(qb_combined2, here("nfl", "data","cleaned", "1_cleaned_nfl_data.csv"))
+```
+
+#### *Career_Stats_Passing File (might not use, similar to QB logs))*
+
+```{r, eval= FALSE}
+# These are YEARLY career stats
+
+#passes <- raw_passes |>
+#  semi_join(qb_id, by = "Player Id") |>
+#  arrange(Name)
+#passes
+```
+
+## Explore Data
+
+```{r}
+summary(qb_combined2)
+# Check dimensions
+print(paste("Number of QBs:", nrow(qb_combined2)))
+print(paste("Number of variables:", ncol(qb_combined2)))
+```
+
+Notes:
+
+-   Age - 81??? Won't be a good variable because its counting their age from birthday until 2016
+
+-   Year - 1970 to 2016
+
+-   RUN_PASS negative because rushing yards is negative (ex. lose yards if sacked)
+
+#### Missingness
+
+```{r}
+empty_columns <- colSums(qb_combined2 == 0, na.rm = TRUE)
+empty_columns
+```
+
+Notes:
+
+-   Some players enter the league for a very short time, and don't play a game at all. We can filter out players who have no Total_Games (Experience is usually 1).
+
+-   98 of 466 NFL players are shown to not be retired (censored to cut off 2015-2016 season). Should we change this cutoff?
+
+Issues:
+
+-   Career totals are functions of survival time so they leak outcome into the predictors so we use game stats, not career ones
+
+-   Filter Experience \> 2 as most empty values come from those with 2 or less years in the league.
+
+-   Took Age Out
+
+-   Longer Career = Larger Total –\> Turn Everything into Ratios
+
+```{r}
+# redued around 150 rows - should we keep or remove? 
+qb_combined3 <- qb_combined2 |>
+  mutate(
+    Yards_per_game = `Passing Yards` / Total_Games,
+    Sacks_per_game = Sacks / Total_Games,
+    TD_per_game   = `TD Passes` / Total_Games,
+    Ints_per_game  = Ints / Total_Games,
+    Rush_per_game = `Rushing Yards`/ Total_Games) |>
+  select(-c("Passing Yards", "Sacks", "TD Passes", "Ints", "Rushing Yards", 
+            "Passes Completed", "Passes Attempted", "Last_Year"))
+            #"Total_Games", "Experience"))
+
+qb_combined3
+
+safe_write_csv(qb_combined3, here("nfl", "data","cleaned", "2_cleaned_nfl_data.csv"))
+
+empty_columns1 <- colSums(qb_combined3 == 0, na.rm = TRUE)
+empty_columns1
+colnames(qb_combined3)
+
+```
+
+### Instead of Using Career Totals, Use Debut Year Stats and 3 Year Stats
+
+[**Debut Year Statistics:**]{.underline}
+
+```{r}
+# keep everything in QB Logs
+qb_debut_combined1 <- qb_debut_summary |>
+  left_join(player_clean, by = "Player Id")
+qb_debut_combined1
+
+# all say same thing: "total_seasons", "time", "Experience", "career_length", "Years Played"
+colnames(player_clean)
+colnames(qb_debut_summary)
+colnames(qb_3year_summary)
+
+# reorder 
+order <- c("Player Id", "Name.x", "Event", "Debut_Year_Games", "Height (inches)", 
+           "Weight (lbs)","Passes Completed", "Passes Attempted", "Passing Yards", 
+           "Sacks", "Ints", "TD Passes", "Rushing Yards", "Debut_TD_INT", "Debut_RUN_PASS")
+
+qb_debut_combined2 <- qb_debut_combined1 |>
+  select(all_of(order)) |>
+  rename(Name = Name.x,
+         Retired = Event) |>
+  mutate(Debut_Completion_Percentage = `Passes Completed`/`Passes Attempted`)
+         
+qb_debut_combined2
+
+# redued around 150 rows - should we keep or remove? 
+qb_debut_combined3 <- qb_debut_combined2 |>
+  mutate(
+    Debut_Yards_per_game = `Passing Yards` / Debut_Year_Games,
+    Debut_Sacks_per_game = Sacks / Debut_Year_Games,
+    Debut_TD_per_game   = `TD Passes` / Debut_Year_Games,
+    Debut_Ints_per_game  = Ints / Debut_Year_Games,
+    Debut_Rush_per_game = `Rushing Yards`/ Debut_Year_Games) |>
+  select(-c("Passing Yards", "Sacks", "TD Passes", "Ints", "Rushing Yards", 
+            "Passes Completed", "Passes Attempted"))
+            #"Total_Games", "Experience"))
+
+qb_debut_combined3
+
+safe_write_csv(qb_debut_combined3, here("nfl", "data","cleaned", "3_cleaned_nfl_debut.csv"))
+```
+
+[**Three Year Statistics:**]{.underline}
+
+```{r}
+# keep everything in QB Logs
+qb_3year_combined1 <- qb_3year_summary |>
+  left_join(player_clean, by = "Player Id")
+qb_3year_combined1
+
+# reorder 
+order <- c("Player Id", "Name.x", "Event", "Three_Year_Games", "Height (inches)", 
+           "Weight (lbs)","Passes Completed", "Passes Attempted", "Passing Yards", 
+           "Sacks", "Ints", "TD Passes", "Rushing Yards", 
+           "Three_Year_TD_INT", "Three_Year_RUN_PASS")
+
+qb_3year_combined2 <- qb_3year_combined1 |>
+  select(all_of(order)) |>
+  rename(Name = Name.x,
+         Retired = Event) |>
+  mutate(Three_Year_Completion_Percentage = `Passes Completed`/`Passes Attempted`)
+         
+qb_3year_combined2
+
+# redued around 150 rows - should we keep or remove? 
+qb_3year_combined3 <- qb_3year_combined2 |>
+  mutate(
+    Three_Year_Yards_per_game = `Passing Yards` / Three_Year_Games,
+    Three_Year_Sacks_per_game = Sacks / Three_Year_Games,
+    Three_Year_TD_per_game   = `TD Passes` / Three_Year_Games,
+    Three_Year_Ints_per_game  = Ints / Three_Year_Games,
+    Three_Year_Rush_per_game = `Rushing Yards`/ Three_Year_Games) |>
+  select(-c("Passing Yards", "Sacks", "TD Passes", "Ints", "Rushing Yards", 
+            "Passes Completed", "Passes Attempted"))
+            #"Total_Games", "Experience"))
+
+qb_3year_combined3
+
+safe_write_csv(qb_3year_combined3, here("nfl", "data","cleaned", "4_cleaned_nfl_3year.csv"))
+
+```
+
+[**Compare Empty Columns of Debut Year vs Three Year:**]{.underline}
+
+```{r}
+empty_columns2 <- colSums(qb_debut_combined3 == 0, na.rm = TRUE)
+empty_columns2
+
+empty_columns3 <- colSums(qb_3year_combined3 == 0, na.rm = TRUE)
+empty_columns3
+
+```
+
+Most drastic difference in missingness is in the TD_INT ratio, where DEBUT has around 290 empty rows versus 198 empty rows. In all of the 3 year data, there is less missing data.
+
+[**COMBINE OF ALL DATA: career, debut year, 3 year**]{.underline}
+
+```{r}
+all_data <- cbind(qb_combined3, qb_debut_combined3, qb_3year_combined3)
+
+cols_keep <- c("Player Id", "Name", "Retired", "Debut_Age",
+               "Height (inches)", "Weight (lbs)", "First_Year", "Experience",
+               "Total_Games", "Debut_Year_Games", "Three_Year_Games",
+               "TD_INT", "Debut_TD_INT", "Three_Year_TD_INT",
+               "RUN_PASS", "Debut_RUN_PASS", "Three_Year_RUN_PASS",
+               "Completion_Percentage", "Debut_Completion_Percentage",
+               "Three_Year_Completion_Percentage",
+               "Yards_per_game", "Debut_Yards_per_game", "Three_Year_Yards_per_game",
+               "Sacks_per_game", "Debut_Sacks_per_game", "Three_Year_Sacks_per_game",
+               "TD_per_game", "Debut_TD_per_game", "Three_Year_TD_per_game",
+               "Ints_per_game", "Debut_Ints_per_game", "Three_Year_Ints_per_game", 
+               "Rush_per_game", "Debut_Rush_per_game", "Three_Year_Rush_per_game")
+
+all_data1 <- all_data[,cols_keep] |>
+  rename(Big_T = Experience)
+```
+
+Save data:
+
+```{r}
+safe_write_csv(all_data1, here("nfl", "data","cleaned", "5_ALL_DATA.csv"))
+```
+
+#### Visuals for Distribution of Variables
+
+Debut Year:
+
+```{r}
+colnames(qb_debut_combined3)
+debut_vars<- c("Debut_TD_INT", "Debut_RUN_PASS", "Debut_Completion_Percentage",
+               "Debut_Yards_per_game", "Debut_Sacks_per_game","Debut_Rush_per_game")
+
+# set up a 2 x 3 grid to display all histograms together 
+par(mfrow = c(2,3))
+#par(mfrow = c(3, 3))
+
+for (i in 1:length(debut_vars)) { #game_stats
+  current = qb_debut_combined3[[debut_vars[i]]] # get rows of that variable
+  hist(current,
+       xlab = debut_vars[i], 
+       main = paste("Histogram of", debut_vars[i]),
+       col = "lightblue",
+       freq = FALSE)
+}
+
+# reset back to default 
+par(mfrow = c(1, 1))
+```
+
+Three Year:
+
+```{r}
+colnames(qb_3year_combined3)
+three_year_vars<- c("Three_Year_TD_INT", "Three_Year_RUN_PASS",
+                    "Three_Year_Completion_Percentage",
+                    "Three_Year_Yards_per_game", "Three_Year_Sacks_per_game",
+                    "Three_Year_Rush_per_game")
+
+# set up a 2 x 3 grid to display all histograms together 
+par(mfrow = c(2,3))
+#par(mfrow = c(3, 3))
+
+for (i in 1:length(three_year_vars)) { #game_stats
+  current = qb_3year_combined3[[three_year_vars[i]]] # get rows of that variable
+  hist(current,
+       xlab = three_year_vars[i], 
+       main = paste("Histogram of", three_year_vars[i]),
+       col = "lightblue",
+       freq = FALSE)
+}
+
+# reset back to default 
+par(mfrow = c(1, 1))
+
+```
+
+Three Year might be more accurate to use since it has a significantly less number of missing values. This can cause certain values to inflate in the debut data.
+
+Overall:
+
+Player Variables
+
+```{r}
+vars <- c("Height (inches)", "Weight (lbs)", "TD_INT", "RUN_PASS", "Completion_Percentage")
+
+# set up a 2 x 3 grid to display all histograms together 
+par(mfrow = c(2,3))
+#par(mfrow = c(3, 3))
+
+for (i in 1:length(vars)) { #game_stats
+  current = qb_combined3[[vars[i]]] # get rows of that variable
+  hist(current,
+       xlab = vars[i], 
+       main = paste("Histogram of", vars[i]),
+       col = "lightblue",
+       freq = FALSE)
+}
+
+# reset back to default 
+par(mfrow = c(1, 1))
+
+```
+
+Player Specific Stat Variables
+
+```{r}
+other <- c("Yards_per_game", "Sacks_per_game", "TD_per_game", "Ints_per_game", "Rush_per_game")
+
+# set up a 3 x 3 grid to display all histograms together 
+par(mfrow = c(2, 3))
+
+for (i in 1:length(other)) { #game_stats
+  current = qb_combined3[[other[i]]] # get rows of that variable
+  hist(current,
+       xlab = other[i], 
+       main = paste("Histogram of", other[i]),
+       col = "lightblue",
+       freq = FALSE)
+}
+
+# reset back to default 
+par(mfrow = c(1, 1))
+
+```
+
+Note: Roughly normally distributed or right-skewed
+
+#### **Era Bar Plot Distribution**
+
+```{r}
+ggplot(qb_combined3, aes(x=Era)) + 
+  geom_bar(fill="pink") + 
+  labs(x = "Era", y = "Count") +
+  theme_minimal()
+  
+```
+
+#### **Correlation Matrix of Numerical Variables**
+
+Taken Out Due to Too High of Correlation –\> Multicollinearity (repetition of same info)
+
+-   "Last_Year" –\> Already have First_Year and Experience (Years/Seasons)
+
+-   "Passes Attempted", "Passing Yards" -\> Completion_Percentage
+
+-   "Ints", "TD Passes" -\> already combined with TD_INT ratio
+
+-   Since Total_Games and Sacks are heavily correlated, changed to Sacks_per_game
+
+```{r}
+
+quant_var <- qb_combined3 |>
+  select("Height (inches)", "Weight (lbs)", "First_Year",
+         "Yards_per_game", "Sacks_per_game", "TD_per_game", 
+         "Ints_per_game", "Rush_per_game", "TD_INT", 
+         "RUN_PASS", "Completion_Percentage")
+         #"Total_Games", "Experience")
+quant_matrix <- cor(quant_var, use = "complete.obs")
+corrplot(quant_matrix, method = "color", type = "upper")
+  
+```
+
+**Distribution of Career Length**
+
+```{r}
+p1 <- ggplot(qb_combined3, aes(x = Experience)) +
+  geom_histogram(binwidth = 1, fill = "lightblue", color = "white") +
+  labs(title = "Distribution of Career Length",
+       x = "Seasons in NFL",
+       y = "Number of QBs") +
+  theme_minimal()
+
+print(p1)
+```
+
+Debut Year
+
+```{r}
+ggplot(qb_debut_combined3, aes(x = factor(Retired), y = Debut_TD_INT)) +
+  geom_violin(fill = "lightpink") +
+  geom_jitter(width = 0.1, alpha = 0.3, color = "blue") +
+  labs(x = "Retired", y = "TD_INT RATIO")
+
+ggplot(qb_debut_combined3, aes(x = factor(Retired), y = Debut_Yards_per_game)) +
+  geom_violin(fill = "lightpink") +
+  geom_jitter(width = 0.1, alpha = 0.3, color = "blue") +
+  labs(x = "Retired", y = "Passing Yards Per Game")
+
+ggplot(qb_debut_combined3, aes(x = factor(Retired), y = Debut_TD_per_game)) +
+  geom_violin(fill = "lightpink") +
+  geom_jitter(width = 0.1, alpha = 0.3, color = "blue") +
+  labs(x = "Retired", y = "Touchdowns Per Game")
+
+ggplot(qb_debut_combined3, aes(x = factor(Retired), y = Debut_Ints_per_game)) +
+  geom_violin(fill = "lightpink") +
+  geom_jitter(width = 0.1, alpha = 0.3, color = "blue") +
+  labs(x = "Retired", y = "Interceptions Per Game")
+
+```
+
+Three Years
+
+```{r}
+ggplot(qb_3year_combined3, aes(x = factor(Retired), y = Three_Year_TD_INT)) +
+  geom_violin(fill = "lightgreen") +
+  geom_jitter(width = 0.1, alpha = 0.3, color = "blue") +
+  labs(x = "Retired", y = "TD_INT RATIO")
+
+ggplot(qb_3year_combined3, aes(x = factor(Retired), y = Three_Year_Yards_per_game)) +
+  geom_violin(fill = "lightgreen") +
+  geom_jitter(width = 0.1, alpha = 0.3, color = "blue") +
+  labs(x = "Retired", y = "Passing Yards Per Game")
+
+ggplot(qb_3year_combined3, aes(x = factor(Retired), y = Three_Year_TD_per_game)) +
+  geom_violin(fill = "lightgreen") +
+  geom_jitter(width = 0.1, alpha = 0.3, color = "blue") +
+  labs(x = "Retired", y = "Touchdowns Per Game")
+
+ggplot(qb_3year_combined3, aes(x = factor(Retired), y = Three_Year_Ints_per_game)) +
+  geom_violin(fill = "lightgreen") +
+  geom_jitter(width = 0.1, alpha = 0.3, color = "blue") +
+  labs(x = "Retired", y = "Interceptions Per Game")
+```
+
+```{r}
+ggplot(qb_combined3, aes(x = factor(Retired), y = TD_INT)) +
+  geom_violin(fill = "lightblue") +
+  geom_jitter(width = 0.1, alpha = 0.3, color = "blue") +
+  labs(x = "Retired", y = "TD_INT RATIO")
+
+ggplot(qb_combined3, aes(x = factor(Retired), y = Yards_per_game)) +
+  geom_violin(fill = "lightblue") +
+  geom_jitter(width = 0.1, alpha = 0.3, color = "blue") +
+  labs(x = "Retired", y = "Passing Yards Per Game")
+
+ggplot(qb_combined3, aes(x = factor(Retired), y = TD_per_game)) +
+  geom_violin(fill = "lightblue") +
+  geom_jitter(width = 0.1, alpha = 0.3, color = "blue") +
+  labs(x = "Retired", y = "Touchdowns Per Game")
+
+ggplot(qb_combined3, aes(x = factor(Retired), y = Ints_per_game)) +
+  geom_violin(fill = "lightblue") +
+  geom_jitter(width = 0.1, alpha = 0.3, color = "blue") +
+  labs(x = "Retired", y = "Interceptions Per Game")
+
+ggplot(qb_combined3, aes(x = factor(Retired), y = `Weight (lbs)`)) +
+  geom_violin(fill = "lightblue") +
+  geom_jitter(width = 0.1, alpha = 0.3, color = "blue") +
+  labs(x = "Retired", y = "Weight")
 ```
