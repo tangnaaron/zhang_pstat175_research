@@ -27,7 +27,7 @@ library(here)
 
 **Raw inputs:** Basic_Stats.csv, Game_Logs_Quarterback.csv (regular season only), Career_Stats_Passing.csv **Source:** [Kaggle NFL Statistics](https://www.kaggle.com/datasets/kendallgillies/nflstatistics/data); [article](https://fonseca-carlos.medium.com/predicting-qb-retirement-with-survival-analysis-or-can-data-tell-if-brady-will-play-till-50-5d0c4b8c24e9).
 
-# Dataset: 
+# Dataset:
 
 **File:** `5_ALL_DATA.csv`
 
@@ -50,33 +50,29 @@ dim(nfl_data)
 
 ### *Identifiers and Outcome*
 
-+-------------+-------------+---------------------------------------------------------------------------+
-| Variable    | Type        | Description                                                               |
-+=============+=============+===========================================================================+
-| `Player_Id` | character   | Unique Player ID.                                                         |
-+-------------+-------------+---------------------------------------------------------------------------+
-| `Name`      | character   | Player name.                                                              |
-+-------------+-------------+---------------------------------------------------------------------------+
-| `Retired`   | 0/1         | **Outcome.** 1 = last season \< 2016; 0 = censored (active through 2016). |
-+-------------+-------------+---------------------------------------------------------------------------+
+| Variable | Type | Description |
+|----|----|----|
+| `Player_Id` | character | Unique Player ID. |
+| `Name` | character | Player name. |
+| `Retired` | 0/1 | **Outcome.** 1 = last season \< 2016; 0 = censored (active through 2016). |
 
 ### *Demographics and Career Frame*
 
-+-------------------+-------------+-------------------------------------------------------------------------------+
-| Variable          | Type        | Description / formula                                                         |
-+===================+=============+===============================================================================+
-| `Debut_Age`       | numeric     | Age at debut: `Age - (2016 - First_Year)` (Original Data: Age = age in 2016). |
-+-------------------+-------------+-------------------------------------------------------------------------------+
-| `Height (inches)` | numeric     | Height of Player in inches.                                                   |
-+-------------------+-------------+-------------------------------------------------------------------------------+
-| `Weight (lbs)`    | numeric     | Weight of Player in pounds.                                                   |
-+-------------------+-------------+-------------------------------------------------------------------------------+
-| `First_Year`      | numeric     | Debut year (\~1970–2016).                                                     |
-+-------------------+-------------+-------------------------------------------------------------------------------+
-| `Career_Time`     | numeric     | **Survival time:** seasons from debut = `Last_Year - First_Year + 1`.         |
-|                   |             |                                                                               |
-|                   |             | Ex. 11 seasons - 2001 to 2011                                                 |
-+-------------------+-------------+-------------------------------------------------------------------------------+
++-------------------+---------+-------------------------------------------------------------------------------+
+| Variable          | Type    | Description / formula                                                         |
++===================+=========+===============================================================================+
+| `Debut_Age`       | numeric | Age at debut: `Age - (2016 - First_Year)` (Original Data: Age = age in 2016). |
++-------------------+---------+-------------------------------------------------------------------------------+
+| `Height (inches)` | numeric | Height of Player in inches.                                                   |
++-------------------+---------+-------------------------------------------------------------------------------+
+| `Weight (lbs)`    | numeric | Weight of Player in pounds.                                                   |
++-------------------+---------+-------------------------------------------------------------------------------+
+| `First_Year`      | numeric | Debut year (\~1970–2016).                                                     |
++-------------------+---------+-------------------------------------------------------------------------------+
+| `Career_Time`     | numeric | **Survival time:** seasons from debut = `Last_Year - First_Year + 1`.         |
+|                   |         |                                                                               |
+|                   |         | Ex. 11 seasons - 2001 to 2011                                                 |
++-------------------+---------+-------------------------------------------------------------------------------+
 
 ### *Game counts (ONLY Regular-Season)*
 
@@ -130,15 +126,11 @@ summary(nfl_data)
 
 # Limitations
 
-+----------------+------------------------------------------------------------------------------------------------------------------+
-| Topic          | Note                                                                                                             |
-+================+==================================================================================================================+
-| **Retirement** | Inferred (no games after season *t*). Misclassification possible (injury, etc.).                                 |
-+----------------+------------------------------------------------------------------------------------------------------------------+
-| **Censoring**  | Cutoff 2016; active QBs = 0. Consider sensitivity to cutoff.                                                     |
-+----------------+------------------------------------------------------------------------------------------------------------------+
-| **Leakage**    | Career totals removed; per-game and ratios (debut/3-year windows) used so predictors don't encode career length. |
-+----------------+------------------------------------------------------------------------------------------------------------------+
+| Topic | Note |
+|----|----|
+| **Retirement** | Inferred (no games after season *t*). Misclassification possible (injury, etc.). |
+| **Censoring** | Cutoff 2016; active QBs = 0. Consider sensitivity to cutoff. |
+| **Leakage** | Career totals removed; per-game and ratios (debut/3-year windows) used so predictors don't encode career length. |
 
 # Data Pipeline
 

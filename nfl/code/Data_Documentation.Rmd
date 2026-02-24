@@ -151,4 +151,4 @@ summary(nfl_data)
 
 -   **Script:** `00_nfl_EDA.Rmd` containing full cleaning, formulas, and visuals.
 -   **Final Output:** `nfl/data/cleaned/5_ALL_DATA.csv`.
--   **Intermediates:** `1_cleaned_nfl_data.csv`, `2_reorder_nfl_data.csv`, `3_cleaned_nfl_debut.csv`, `4_cleaned_nfl_3year.csv`.
+-   **Intermediates Files:** `1_cleaned_nfl_data.csv`, `2_reorder_nfl_data.csv`, `3_cleaned_nfl_debut.csv`, `4_cleaned_nfl_3year.csv`.
