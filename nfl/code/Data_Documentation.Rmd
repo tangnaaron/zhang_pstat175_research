@@ -1,0 +1,154 @@
+---
+title: "Data Documentation"
+subtitle: "NFL Quarterback Retirement Research"
+date: "2026-02-25"
+author: "Emma Nguyen"
+format: 
+  pdf
+html-math-method: mathjax
+execute:
+  eval: TRUE
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(here)
+```
+
+# Research Overview
+
+**Purpose:** Survival Analysis of Quarterback retirement in National Football League (NFL).
+
+**Built by:** `00_nfl_EDA.Rmd`
+
+-   **Event:** Retirement = last season in NFL (no games after season *t*).
+-   **Time:** Seasons since debut (`Career_Time`).
+-   **Censoring:** Active through end of data → `Retired = 0`. Data **stops at 2016**; \~98 QBs censored (EDA).
+
+**Raw inputs:** Basic_Stats.csv, Game_Logs_Quarterback.csv, Career_Stats_Passing.csv
+
+-   Basic_Stats.csv:
+
+-   Game_Logs_Quarterback.csv:
+
+-   Career_Stats_Passing.csv:
+
+**Sources:** [Kaggle NFL Statistics](https://www.kaggle.com/datasets/kendallgillies/nflstatistics/data) (scraped from official [NFL](http://www.nfl.com) website)
+
+# Dataset:
+
+**File:** `5_ALL_DATA.csv`
+
+**Unit:** Each row is one QB (Quarterback). **Scope:** QBs with ≥1 row in Game_Logs_Quarterback. **Merge:** Career + Debut-Year + First-Three-Year Summary Statistics
+
+Note: No raw career totals used as predictors to avoid leaking survival time.
+
+## Load Data and Dimensions
+
+```{r load data}
+nfl_data <- read_csv(
+  here("nfl", "data", "cleaned", "5_ALL_DATA.csv"),
+  show_col_types = FALSE)
+
+nfl_data
+# 35 columns, 466 rows (Quarterbacks)
+dim(nfl_data)
+```
+
+# Variable Reference
+
+### *Identifiers and Outcome*
+
++-------------+-----------+---------------------------------------------------------------------------+
+| Variable    | Type      | Description                                                               |
++=============+===========+===========================================================================+
+| `Player_Id` | character | Unique Player ID.                                                         |
++-------------+-----------+---------------------------------------------------------------------------+
+| `Name`      | character | Player name.                                                              |
++-------------+-----------+---------------------------------------------------------------------------+
+| `Retired`   | 0/1       | **Outcome.** 1 = last season \< 2016; 0 = censored (active through 2016). |
++-------------+-----------+---------------------------------------------------------------------------+
+
+### *Demographics and Career Frame*
+
++-------------------+------------+-------------------------------------------------------------------------------+
+| Variable          | Type       | Description / formula                                                         |
++===================+============+===============================================================================+
+| `Debut_Age`       | numeric    | Age at debut: `Age - (2016 - First_Year)` (Original Data: Age = age in 2016). |
++-------------------+------------+-------------------------------------------------------------------------------+
+| `Height (inches)` | numeric    | Height of Player in inches.                                                   |
++-------------------+------------+-------------------------------------------------------------------------------+
+| `Weight (lbs)`    | numeric    | Weight of Player in pounds.                                                   |
++-------------------+------------+-------------------------------------------------------------------------------+
+| `First_Year`      | numeric    | Debut year (\~1970–2016).                                                     |
++-------------------+------------+-------------------------------------------------------------------------------+
+| `Career_Time`     | numeric    | **Survival time:** seasons from debut = `Last_Year - First_Year + 1`.         |
+|                   |            |                                                                               |
+|                   |            | Ex. 11 seasons - 2001 to 2011                                                 |
++-------------------+------------+-------------------------------------------------------------------------------+
+
+### *Game counts (ONLY Regular-Season)*
+
+| Variable           | Description                     |
+|--------------------|---------------------------------|
+| `Career_Games`     | Total Games Played in Career.   |
+| `Debut_Year_Games` | Total Games in debut season.    |
+| `Three_Year_Games` | Total Games in first 3 seasons. |
+
+### *Derived ratios (Career\_\*\| Debut\_\* \| Three_Year\_\*)*
+
+-   **TD_INT:** `TD Passes / max(Ints, 1)` - Touchdown to Interception ratio; Infer accuracy/efficiency; higher → longer career (EDA).
+-   **RUN_PASS:** `Rushing Yards / max(Passing Yards, 1)` — mobility; can be \<0 (sacks); higher → more hits, earlier retirement (EDA).
+
+### *Completion and Per-Game stats (\*\_PG)*
+
+-   **Completion_Percentage** (Career / Debut / Three-Year): Number of Throws Completions / Attempts; Infer accuracy/efficiency
+-   **Per-Game Statistics:** `*_PG`, `Debut_*_PG`, `Three_Year_*_PG` for Yards (passing), Sacks, TD (touchdowns), Ints (interceptions), Rush (rushing yards).
+    -   **Denominator** = Career_Games, Debut_Year_Games, or Three_Year_Games;
+        -   **NA** when denominator = 0.
+
+# Missingness and Ranges
+
+**Missingness:** Debut stats have more NAs (when there are no debut games or 0 attempts). Three-year window has fewer NAs.
+
+-   Most missingness is 'Debut_Completion_Percentage' with 181 of 466 rows NA.
+
+```{r NAs}
+missingness <- colSums(is.na(nfl_data))
+missingness[missingness > 0]
+max(missingness) 
+```
+
+**Ranges:**
+
+-   First_Year (Debut Year): 1970–2016
+
+-   RUN_PASS can be negative
+
+-   Many zeros in TD_INT / per-game for short careers. Consider filtering e.g. `Big_T > 2` or `Total_Games > 0` for modeling.
+
+# Data Structure and Summary
+
+```{r summary}
+glimpse(nfl_data)
+summary(nfl_data)
+```
+
+# Limitations
+
++----------------+---------------------------------------------------------------------------------------------------------------------------------------+
+| Topic          | Note                                                                                                                                  |
++================+=======================================================================================================================================+
+| **Retirement** | Inferred (no games after season *t*). Misclassification possible (injury, etc.).                                                      |
++----------------+---------------------------------------------------------------------------------------------------------------------------------------+
+| **Censoring**  | Cutoff 2016; QBs still active if Retired = 0. Consider sensitivity to cutoff.                                                         |
++----------------+---------------------------------------------------------------------------------------------------------------------------------------+
+| **Leakage**    | Remove career totals (there for reference); per-game and ratios (debut/3-year windows) used so predictors don't encode career length. |
++----------------+---------------------------------------------------------------------------------------------------------------------------------------+
+
+# Data Pipeline
+
+-   **Script:** `00_nfl_EDA.Rmd` containing full cleaning, formulas, and visuals.
+-   **Final Output:** `nfl/data/cleaned/5_ALL_DATA.csv`.
+-   **Intermediates:** `1_cleaned_nfl_data.csv`, `2_reorder_nfl_data.csv`, `3_cleaned_nfl_debut.csv`, `4_cleaned_nfl_3year.csv`.
