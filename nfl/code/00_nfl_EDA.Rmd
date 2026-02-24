@@ -503,7 +503,29 @@ cols_keep <- c("Player Id", "Name", "Retired", "Debut_Age",
                "Rush_per_game", "Debut_Rush_per_game", "Three_Year_Rush_per_game")
 
 all_data1 <- all_data[,cols_keep] |>
-  rename(Big_T = Experience)
+  rename(Player_ID = `Player Id`,
+         Career_Time = Experience,
+         Career_Games = Total_Games,
+         Career_Run_Pass = RUN_PASS,
+         Debut_Run_Pass = Debut_RUN_PASS,
+         Three_Year_Run_Pass = Three_Year_RUN_PASS,
+         Career_Completion_Percentage = Completion_Percentage,
+         Career_Yards_PG = Yards_per_game, 
+         Debut_Yards_PG = Debut_Yards_per_game,
+         Three_Year_Yards_PG = Three_Year_Yards_per_game, 
+         Career_Sacks_PG = Sacks_per_game,
+         Debut_Sacks_PG = Debut_Sacks_per_game,
+         Three_Year_Sacks_PG = Three_Year_Sacks_per_game,
+         Career_TD_PG = TD_per_game,
+         Debut_TD_PG = Debut_TD_per_game,
+         Three_Year_TD_PG = Three_Year_TD_per_game, 
+         Career_Ints_PG = Ints_per_game,
+         Debut_Ints_PG = Debut_Ints_per_game,
+         Three_Year_Ints_PG = Three_Year_Ints_per_game, 
+         Career_Rush_PG = Rush_per_game,
+         Debut_Rush_PG = Debut_Rush_per_game,
+         Three_Year_Rush_PG = Three_Year_Rush_per_game)
+  
 ```
 
 Save data:
