@@ -28,11 +28,11 @@ library(here)
 
 **Raw inputs:** Basic_Stats.csv, Game_Logs_Quarterback.csv, Career_Stats_Passing.csv
 
--   Basic_Stats.csv:
+-   **Basic_Stats.csv**: Player-level demographics and roster information, including name, player ID, age, height, weight, current status/team (excluded), position, and experience/years played.
 
--   Game_Logs_Quarterback.csv:
+-   **Game_Logs_Quarterback.csv**: Game-level logs for quarterbacks only, with season/year, week and game date, home/away and outcome, games played, passing attempts/completions/yards, sacks and sack yards, rushing yards, interceptions, touchdowns, and other game stats.
 
--   Career_Stats_Passing.csv:
+-   **Career_Stats_Passing.csv**: Season-by-season passing summaries (one row per player-season) that aggregate key passing statistics over each year of a player’s career; used mainly for cross-checking.
 
 **Sources:** [Kaggle NFL Statistics](https://www.kaggle.com/datasets/kendallgillies/nflstatistics/data) (scraped from official [NFL](http://www.nfl.com) website)
 
@@ -72,21 +72,21 @@ dim(nfl_data)
 
 ### *Demographics and Career Frame*
 
-+-------------------+------------+-------------------------------------------------------------------------------+
-| Variable          | Type       | Description / formula                                                         |
-+===================+============+===============================================================================+
-| `Debut_Age`       | numeric    | Age at debut: `Age - (2016 - First_Year)` (Original Data: Age = age in 2016). |
-+-------------------+------------+-------------------------------------------------------------------------------+
-| `Height (inches)` | numeric    | Height of Player in inches.                                                   |
-+-------------------+------------+-------------------------------------------------------------------------------+
-| `Weight (lbs)`    | numeric    | Weight of Player in pounds.                                                   |
-+-------------------+------------+-------------------------------------------------------------------------------+
-| `First_Year`      | numeric    | Debut year (\~1970–2016).                                                     |
-+-------------------+------------+-------------------------------------------------------------------------------+
-| `Career_Time`     | numeric    | **Survival time:** seasons from debut = `Last_Year - First_Year + 1`.         |
-|                   |            |                                                                               |
-|                   |            | Ex. 11 seasons - 2001 to 2011                                                 |
-+-------------------+------------+-------------------------------------------------------------------------------+
++-------------------+-----------+-------------------------------------------------------------------------------+
+| Variable          | Type      | Description / formula                                                         |
++===================+===========+===============================================================================+
+| `Debut_Age`       | numeric   | Age at debut: `Age - (2016 - First_Year)` (Original Data: Age = age in 2016). |
++-------------------+-----------+-------------------------------------------------------------------------------+
+| `Height (inches)` | numeric   | Height of Player in inches.                                                   |
++-------------------+-----------+-------------------------------------------------------------------------------+
+| `Weight (lbs)`    | numeric   | Weight of Player in pounds.                                                   |
++-------------------+-----------+-------------------------------------------------------------------------------+
+| `First_Year`      | numeric   | Debut year (\~1970–2016).                                                     |
++-------------------+-----------+-------------------------------------------------------------------------------+
+| `Career_Time`     | numeric   | **Survival time:** seasons from debut = `Last_Year - First_Year + 1`.         |
+|                   |           |                                                                               |
+|                   |           | Ex. 11 seasons - 2001 to 2011                                                 |
++-------------------+-----------+-------------------------------------------------------------------------------+
 
 ### *Game counts (ONLY Regular-Season)*
 
@@ -152,3 +152,74 @@ summary(nfl_data)
 -   **Script:** `00_nfl_EDA.Rmd` containing full cleaning, formulas, and visuals.
 -   **Final Output:** `nfl/data/cleaned/5_ALL_DATA.csv`.
 -   **Intermediates Files:** `1_cleaned_nfl_data.csv`, `2_reorder_nfl_data.csv`, `3_cleaned_nfl_debut.csv`, `4_cleaned_nfl_3year.csv`.
+
+# Intermediate NFL Datasets
+
+Inspired by the UCI data documentation, this section briefly describes the **intermediate NFL datasets** that lead up to the final `5_ALL_DATA.csv` file, and how each is constructed from the raw inputs using `00_nfl_EDA.Rmd`.
+
+## 1. Career-level cleaned dataset: `1_cleaned_nfl_data.csv`
+
+-   **File path**: `nfl/data/cleaned/1_cleaned_nfl_data.csv`\
+-   **Generating code**: within `nfl/code/00_nfl_EDA.Rmd` (section “Filter Files for Statistics only on Quarterbacks” and “Join Basic_Stats and QB_Logs File”).
+
+**Key steps:**
+
+-   Identify quarterbacks by taking distinct `Player Id` values from `Game_Logs_Quarterback.csv`, then restrict `Basic_Stats.csv` to these IDs to form `player_clean` (keeping age, height, weight, experience, and years played).\
+-   Restrict `Game_Logs_Quarterback.csv` to **regular season** games only and compute `qb_career_summary` by grouping by player and summarizing: first and last year played, total seasons and games, and career totals of key stats (passing yards, sacks, interceptions, touchdowns, rushing yards).\
+-   Define survival-style quantities: `Time` (seasons played), `Event` (retirement indicator based on whether Last_Year \< 2016), and ratios `TD_INT` and `RUN_PASS`.\
+-   Left-join `qb_career_summary` with `player_clean` to add demographics, compute `Debut_Age = Age − (2016 − First_Year)`, and rename `Time` to `Experience.`
+
+```{r message = FALSE, warning = FALSE}
+nfl_1 <- read_csv(here("nfl", "data", "cleaned", "1_cleaned_nfl_data.csv"),
+                  show_col_types = FALSE)
+colnames(nfl_1)
+```
+
+## 2. Per-game career dataset: `2_reorder_nfl_data.csv`
+
+-   **File path**: `nfl/data/cleaned/2_reorder_nfl_data.csv`\
+-   **Generating code**: `qb_combined3` block in `00_nfl_EDA.Rmd`.
+
+**Key steps:**
+
+-   Starting from `1_cleaned_nfl_data.csv`, create per-game versions of key career totals:\
+    `Yards_per_game`, `Sacks_per_game`, `TD_per_game`, `Ints_per_game`, and `Rush_per_game` using `Total_Games` as the denominator.\
+-   Drop raw career totals (`Passing Yards`, `Sacks`, `TD Passes`, `Ints`, `Rushing Yards`, and raw attempts/completions) so that analyses focus on per-game rates and ratios rather than totals that are functions of survival time.\
+-   Write the result to `2_reorder_nfl_data.csv`, variables are reordered for readability purposes.
+
+## 3. Debut-year dataset: `3_cleaned_nfl_debut.csv`
+
+-   **File path**: `nfl/data/cleaned/3_cleaned_nfl_debut.csv`\
+-   **Generating code**: “Debut Year Statistics” section in `00_nfl_EDA.Rmd`.
+
+**Key steps:**
+
+-   From regular-season QB logs, construct `qb_first_year` by keeping only games from each player’s **debut season** (minimum `Year` per `Player Id`).\
+-   Summarize debut-season totals for the same core stats (passing yards, sacks, touchdowns, interceptions, rushing yards) and the number of games played in the debut year.\
+-   Join with `player_clean` to add height and weight; compute debut-year efficiency measures (`Debut_TD_INT`, `Debut_RUN_PASS`, and `Debut_Completion_Percentage`) and per-game rates (`Debut_Yards_per_game`, `Debut_Sacks_per_game`, `Debut_TD_per_game`, `Debut_Ints_per_game`, `Debut_Rush_per_game`).\
+-   Save the resulting debut-only summary as `3_cleaned_nfl_debut.csv`.
+
+```{r message = FALSE, warning = FALSE}
+nfl_debut <- read_csv(here("nfl", "data", "cleaned", "3_cleaned_nfl_debut.csv"),
+                      show_col_types = FALSE)
+colnames(nfl_debut)
+```
+
+## 4. First-three-years dataset: `4_cleaned_nfl_3year.csv`
+
+-   **File path**: `nfl/data/cleaned/4_cleaned_nfl_3year.csv`\
+-   **Generating code**: “Three Year Statistics” section in `00_nfl_EDA.Rmd`.
+
+**Key steps:**
+
+-   Build `qb_3_years` by keeping only games from a QB’s **first three seasons** (years ≤ debut year + 2).\
+-   Summarize totals over those three seasons, then compute three-year efficiency ratios (`Three_Year_TD_INT`, `Three_Year_RUN_PASS`, `Three_Year_Completion_Percentage`) and per-game rates (`Three_Year_Yards_per_game`, `Three_Year_Sacks_per_game`, `Three_Year_TD_per_game`, `Three_Year_Ints_per_game`, `Three_Year_Rush_per_game`).\
+-   Join with `player_clean` to attach demographics and write the result to `4_cleaned_nfl_3year.csv`.
+
+```{r message = FALSE, warning = FALSE}
+nfl_three_year <- read_csv(here("nfl", "data", "cleaned", "4_cleaned_nfl_3year.csv"),
+                      show_col_types = FALSE)
+colnames(nfl_three_year)
+```
+
+We begin with raw NFL data, construct a cleaned career-level QB dataset, derive early-career summaries (debut and first three years), and finally combine them into the all-in-one analysis file `5_ALL_DATA.csv` documented above.
